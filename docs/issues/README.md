@@ -1,6 +1,6 @@
 # Implementation Roadmap
 
-28 issues organized into 6 phases. Each phase builds on the previous, designed so a LangGraph beginner can follow from zero to deployment.
+23 issues organized into 6 phases. Each phase builds on the previous, designed so a LangGraph beginner can follow from zero to deployment.
 
 ## Phase 1: Foundation (No LangGraph knowledge needed)
 
@@ -16,8 +16,7 @@
 
 | # | Type | Title | Priority | Depends On |
 |---|------|-------|----------|------------|
-| [006](006-implement-parse-resume-node.md) | Feature | Implement parse_resume node | High | 002, 004 |
-| [007](007-test-parse-resume-node.md) | Feature | Test parse_resume node | High | 006 |
+| [006](006-implement-parse-resume-node.md) | Feature | Implement and test parse_resume node | High | 002, 004 |
 | [008](008-verify-langgraph-assembly.md) | Feature | Verify LangGraph graph assembly | High | 006 |
 | [009](009-wire-parse-resume-cli.md) | Feature | Wire parse-resume CLI command | Medium | 006 |
 | [010](010-development-guide.md) | Docs | Write "How to Develop" guide | Medium | 006 |
@@ -26,21 +25,17 @@
 
 | # | Type | Title | Priority | Depends On |
 |---|------|-------|----------|------------|
-| [011](011-implement-ats-score-node.md) | Feature | Implement ats_score node | High | 006 |
-| [012](012-test-ats-score-node.md) | Feature | Test ats_score node | High | 011 |
-| [013](013-implement-analyze-gaps-node.md) | Feature | Implement analyze_gaps node | High | 011 |
-| [014](014-implement-optimize-content-node.md) | Feature | Implement optimize_content node | High | 013 |
-| [015](015-test-analyze-gaps-optimize-content.md) | Feature | Test analyze_gaps + optimize_content | High | 013, 014 |
-| [016](016-implement-pdf-generator.md) | Feature | Implement PDF generation tool | High | 001 |
-| [017](017-test-pdf-generator.md) | Feature | Test pdf_generator tool | High | 016 |
+| [011](011-implement-ats-score-node.md) | Feature | Implement and test ats_score node | High | 006 |
+| [013](013-implement-analyze-gaps-node.md) | Feature | Implement and test analyze_gaps node | High | 011 |
+| [014](014-implement-optimize-content-node.md) | Feature | Implement and test optimize_content node | High | 013 |
+| [016](016-implement-pdf-generator.md) | Feature | Implement and test PDF generation tool | High | 001 |
 
 ## Phase 4: Pipeline Completion
 
 | # | Type | Title | Priority | Depends On |
 |---|------|-------|----------|------------|
-| [018](018-implement-generate-pdf-node.md) | Feature | Implement generate_pdf node | High | 016 |
-| [019](019-implement-report-results-node.md) | Feature | Implement report_results node | High | 014 |
-| [020](020-test-generate-pdf-report-results-nodes.md) | Feature | Test generate_pdf + report_results | High | 018, 019 |
+| [018](018-implement-generate-pdf-node.md) | Feature | Implement and test generate_pdf node | High | 016 |
+| [019](019-implement-report-results-node.md) | Feature | Implement and test report_results node | High | 014 |
 | [021](021-full-pipeline-integration-test.md) | Feature | Full pipeline integration test | High | 018, 019 |
 | [022](022-wire-run-score-cli.md) | Feature | Wire run + score CLI commands | High | 021 |
 
@@ -65,24 +60,20 @@
 ```
 001 ──┬── 002 ── 003
       ├── 004 ── 005
-      └── 016 ── 017 ── 018
-                          │
-002 + 004 ── 006 ──┬── 007
-                    ├── 008
+      └── 016 ── 018
+                  │
+002 + 004 ── 006 ──┬── 008
                     ├── 009
                     ├── 010
-                    └── 011 ── 012
-                         └── 013 ── 014 ── 015
-                                     │
-                              019 ───┘
+                    └── 011 ── 013 ── 014
+                                       │
+                              019 ─────┘
                                │
-                    018 + 019 ── 020
-                         │
-                         021 ──┬── 022 ──┬── 023
-                               │         ├── 024
-                               │         └── 027
-                               ├── 026
-                               └── 028
+                    018 + 019 ── 021 ──┬── 022 ──┬── 023
+                                       │         ├── 024
+                                       │         └── 027
+                                       ├── 026
+                                       └── 028
                     014 ── 025
 ```
 
