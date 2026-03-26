@@ -10,10 +10,10 @@ Four of six pipeline nodes depend on the LLM provider. A clear error when the AP
 
 ## Tasks
 
-- [ ] Add validation: if the API key for the selected provider is empty, raise `ValueError` with a message like `"OPENAI_API_KEY not set. Add it to your .env file."`
-- [ ] Add optional `provider`/`model` parameters to `get_llm()` that override settings (useful for testing)
-- [ ] Ensure `mypy` passes with strict mode
-- [ ] Verify all three provider paths work (OpenAI, Anthropic, Google)
+- [x] Add validation: if the API key for the selected provider is empty, raise `ValueError` with a message like `"OPENAI_API_KEY not set. Add it to your .env file."`
+- [x] Add optional `provider`/`model` parameters to `get_llm()` that override settings (useful for testing)
+- [x] Ensure `mypy` passes with strict mode
+- [x] Verify all four provider paths work (OpenAI, Anthropic, Google, OpenRouter)
 
 ## Acceptance Criteria
 
