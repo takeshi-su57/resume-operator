@@ -1,9 +1,11 @@
 """Node: Score resume ATS compatibility against job description."""
 
+from typing import Any
+
 from resume_operator.state import ResumeOptimizerState
 
 
-def ats_score(state: ResumeOptimizerState) -> dict:
+def ats_score(state: ResumeOptimizerState) -> dict[str, Any]:
     """Score how well the resume matches the job description for ATS systems.
 
     Compares resume keywords, experience, and skills against job requirements.

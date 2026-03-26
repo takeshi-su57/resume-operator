@@ -1,9 +1,11 @@
 """Node: Generate optimized resume as PDF."""
 
+from typing import Any
+
 from resume_operator.state import ResumeOptimizerState
 
 
-def generate_pdf(state: ResumeOptimizerState) -> dict:
+def generate_pdf(state: ResumeOptimizerState) -> dict[str, Any]:
     """Generate PDF from optimized resume content using ReportLab.
 
     Takes the optimized resume sections and renders them into a

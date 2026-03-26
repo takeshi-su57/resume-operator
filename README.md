@@ -56,6 +56,7 @@ docs/                    # Architecture docs + ADRs
 ## Prerequisites
 
 - Python 3.12+
+- [uv](https://docs.astral.sh/uv/) (Python package manager)
 - An LLM API key (OpenAI, Anthropic, or Google)
 
 ## Quick Start
@@ -64,37 +65,38 @@ docs/                    # Architecture docs + ADRs
 # Clone and install
 git clone <repo-url>
 cd resume-operator
-pip install -e ".[dev]"
+uv sync --dev
 
 # Configure environment
 cp .env.example .env
 # Edit .env — add your LLM API key
 
 # Run the optimizer
-python -m resume_operator run --resume resume.pdf --job job_description.txt
+uv run python -m resume_operator run --resume resume.pdf --job job_description.txt
 ```
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `python -m resume_operator run` | Run full optimization pipeline |
-| `python -m resume_operator parse-resume` | Parse resume only |
-| `python -m resume_operator score` | ATS compatibility score only |
-| `pytest` | Run tests |
-| `ruff check src/ tests/` | Lint |
-| `ruff format src/ tests/` | Format |
-| `mypy src/` | Type check |
+| `uv run python -m resume_operator run` | Run full optimization pipeline |
+| `uv run python -m resume_operator parse-resume` | Parse resume only |
+| `uv run python -m resume_operator score` | ATS compatibility score only |
+| `uv run pytest` | Run tests |
+| `uv run ruff check src/ tests/` | Lint |
+| `uv run ruff format src/ tests/` | Format |
+| `uv run mypy src/` | Type check |
 
 ## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LLM_PROVIDER` | `openai` | LLM provider: `openai`, `anthropic`, `google` |
+| `LLM_PROVIDER` | `openai` | LLM provider: `openai`, `anthropic`, `google`, `openrouter` |
 | `LLM_MODEL` | `gpt-4o` | Model name (provider-specific) |
 | `OPENAI_API_KEY` | — | OpenAI API key |
 | `ANTHROPIC_API_KEY` | — | Anthropic API key |
 | `GOOGLE_API_KEY` | — | Google AI API key |
+| `OPENROUTER_API_KEY` | — | OpenRouter API key |
 | `LOG_LEVEL` | `INFO` | Logging level |
 
 ## AI Engineering

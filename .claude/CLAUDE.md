@@ -10,10 +10,11 @@ Resume Optimizer AI Agent. User provides a resume PDF and a job description (tex
 |-------|-----------|
 | Language | Python 3.12+ |
 | Agent Framework | LangGraph (StateGraph) |
-| LLM | LangChain (OpenAI / Anthropic / Google — configurable) |
+| LLM | LangChain (OpenAI / Anthropic / Google / OpenRouter — configurable) |
 | PDF Parsing (input) | PyMuPDF (fitz) |
 | PDF Generation (output) | ReportLab |
 | CLI | Typer + Rich |
+| Package Manager | uv |
 | Config | Pydantic Settings + python-dotenv |
 | Linting | Ruff |
 | Type Checking | mypy (strict) |
@@ -66,14 +67,14 @@ docs/                        → Architecture docs + ADRs
 ## Key Commands
 
 ```bash
-pip install -e ".[dev]"    # Install with dev dependencies
-python -m resume_operator run --resume resume.pdf --job job.txt     # Full pipeline
-python -m resume_operator parse-resume --resume resume.pdf          # Parse only
-python -m resume_operator score --resume resume.pdf --job job.txt   # ATS score only
-pytest                     # Run tests
-ruff check src/ tests/     # Lint
-ruff format src/ tests/    # Format
-mypy src/                  # Type check
+uv sync --dev              # Install with dev dependencies
+uv run python -m resume_operator run --resume resume.pdf --job job.txt     # Full pipeline
+uv run python -m resume_operator parse-resume --resume resume.pdf          # Parse only
+uv run python -m resume_operator score --resume resume.pdf --job job.txt   # ATS score only
+uv run pytest              # Run tests
+uv run ruff check src/ tests/     # Lint
+uv run ruff format src/ tests/    # Format
+uv run mypy src/           # Type check
 ```
 
 ## Conventions

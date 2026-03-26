@@ -1,6 +1,7 @@
 """LangChain model factory — returns a BaseChatModel based on config."""
 
 from langchain_core.language_models import BaseChatModel
+from pydantic import SecretStr
 
 from resume_operator.config import get_settings
 
@@ -8,7 +9,7 @@ from resume_operator.config import get_settings
 def get_llm() -> BaseChatModel:
     """Return a LangChain chat model based on LLM_PROVIDER env var.
 
-    Supports: openai, anthropic, google.
+    Supports: openai, anthropic, google, openrouter.
     Provider-specific packages are imported lazily.
     """
     settings = get_settings()
@@ -17,15 +18,25 @@ def get_llm() -> BaseChatModel:
     if provider == "openai":
         from langchain_openai import ChatOpenAI
 
-        return ChatOpenAI(model=settings.llm_model, api_key=settings.openai_api_key)
+        return ChatOpenAI(model=settings.llm_model, api_key=SecretStr(settings.openai_api_key))
     elif provider == "anthropic":
         from langchain_anthropic import ChatAnthropic
 
-        return ChatAnthropic(model=settings.llm_model, api_key=settings.anthropic_api_key)
+        return ChatAnthropic(  # type: ignore[call-arg]
+            model_name=settings.llm_model, api_key=SecretStr(settings.anthropic_api_key)
+        )
     elif provider == "google":
         from langchain_google_genai import ChatGoogleGenerativeAI
 
         return ChatGoogleGenerativeAI(model=settings.llm_model, api_key=settings.google_api_key)
+    elif provider == "openrouter":
+        from langchain_openai import ChatOpenAI
+
+        return ChatOpenAI(
+            model=settings.llm_model,
+            api_key=SecretStr(settings.openrouter_api_key),
+            base_url="https://openrouter.ai/api/v1",
+        )
     else:
         msg = f"Unsupported LLM provider: {provider}"
         raise ValueError(msg)

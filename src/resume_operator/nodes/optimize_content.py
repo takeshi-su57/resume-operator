@@ -1,9 +1,11 @@
 """Node: Optimize resume content based on gap analysis."""
 
+from typing import Any
+
 from resume_operator.state import ResumeOptimizerState
 
 
-def optimize_content(state: ResumeOptimizerState) -> dict:
+def optimize_content(state: ResumeOptimizerState) -> dict[str, Any]:
     """Rewrite and enhance resume content to better match the job description.
 
     Takes the original resume, gap analysis, and job description to produce

@@ -1,9 +1,11 @@
 """Node: Extract structured data from resume PDF."""
 
+from typing import Any
+
 from resume_operator.state import ResumeOptimizerState
 
 
-def parse_resume(state: ResumeOptimizerState) -> dict:
+def parse_resume(state: ResumeOptimizerState) -> dict[str, Any]:
     """Parse resume PDF and extract structured data.
 
     Uses PyMuPDF to extract raw text, then LLM to structure it into

@@ -2,7 +2,7 @@
 
 ## API Keys
 
-- LLM provider keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`) must come from environment variables
+- LLM provider keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `OPENROUTER_API_KEY`) must come from environment variables
 - Use `config.py` (Pydantic Settings) to access all configuration — never read `os.environ` directly
 - `.env` is in `.gitignore` — never commit it
 - `.env.example` documents all variables without real values — keep it updated

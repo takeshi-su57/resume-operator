@@ -1,6 +1,9 @@
 """LangGraph StateGraph assembly for the resume optimization pipeline."""
 
+from typing import Any
+
 from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from resume_operator.nodes.analyze_gaps import analyze_gaps
 from resume_operator.nodes.ats_score import ats_score
@@ -11,7 +14,7 @@ from resume_operator.nodes.report_results import report_results
 from resume_operator.state import ResumeOptimizerState
 
 
-def build_graph() -> StateGraph:
+def build_graph() -> CompiledStateGraph[Any]:
     """Build and compile the resume optimization graph."""
     graph = StateGraph(ResumeOptimizerState)
 

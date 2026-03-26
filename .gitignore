@@ -211,3 +211,5 @@ data/
 
 # Environment
 .env
+
+.claude/settings.local.json

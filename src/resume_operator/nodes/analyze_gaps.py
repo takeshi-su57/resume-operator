@@ -1,9 +1,11 @@
 """Node: Analyze gaps between resume and job requirements."""
 
+from typing import Any
+
 from resume_operator.state import ResumeOptimizerState
 
 
-def analyze_gaps(state: ResumeOptimizerState) -> dict:
+def analyze_gaps(state: ResumeOptimizerState) -> dict[str, Any]:
     """Identify gaps, strengths, and improvement suggestions.
 
     Uses ATS score results and full resume/job data to produce actionable

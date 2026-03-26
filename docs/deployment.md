@@ -8,14 +8,14 @@ The simplest deployment — run directly on your machine.
 
 ```bash
 # Install
-pip install -e .
+uv sync
 
 # Configure
 cp .env.example .env
 # Edit .env with your API key
 
 # Run
-python -m resume_operator run --resume resume.pdf --job job.txt --output output.pdf
+uv run python -m resume_operator run --resume resume.pdf --job job.txt --output output.pdf
 ```
 
 Output files are written to `data/` by default.
@@ -48,11 +48,12 @@ The project includes a `Dockerfile` at the repo root:
 
 ```dockerfile
 FROM python:3.12-slim
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 WORKDIR /app
-COPY pyproject.toml .
+COPY pyproject.toml uv.lock ./
 COPY src/ src/
-RUN pip install --no-cache-dir .
-ENTRYPOINT ["python", "-m", "resume_operator"]
+RUN uv sync --no-dev --frozen
+ENTRYPOINT ["uv", "run", "python", "-m", "resume_operator"]
 ```
 
 ## Docker Compose
@@ -79,11 +80,12 @@ docker compose run resume-operator
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `LLM_PROVIDER` | No | `openai` (default), `anthropic`, `google` |
+| `LLM_PROVIDER` | No | `openai` (default), `anthropic`, `google`, `openrouter` |
 | `LLM_MODEL` | No | Model name, default `gpt-4o` |
 | `OPENAI_API_KEY` | If using OpenAI | Your OpenAI API key |
 | `ANTHROPIC_API_KEY` | If using Anthropic | Your Anthropic API key |
 | `GOOGLE_API_KEY` | If using Google | Your Google AI API key |
+| `OPENROUTER_API_KEY` | If using OpenRouter | Your OpenRouter API key |
 | `LOG_LEVEL` | No | `INFO` (default), `DEBUG`, `WARNING` |
 
 ## Security Considerations
@@ -112,7 +114,7 @@ In Docker, make sure the file is mounted into the container.
 
 ### "ValueError: Unsupported LLM provider: xxx"
 
-The `LLM_PROVIDER` value must be one of: `openai`, `anthropic`, `google`.
+The `LLM_PROVIDER` value must be one of: `openai`, `anthropic`, `google`, `openrouter`.
 
 ### "PDF has no extractable text"
 
@@ -124,3 +126,4 @@ Check that `LLM_MODEL` matches your provider:
 - OpenAI: `gpt-4o`, `gpt-4o-mini`, `gpt-4-turbo`
 - Anthropic: `claude-sonnet-4-20250514`, `claude-haiku-4-5-20251001`
 - Google: `gemini-2.0-flash`, `gemini-2.5-pro`
+- OpenRouter: any model from [openrouter.ai/models](https://openrouter.ai/models)

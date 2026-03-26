@@ -5,7 +5,8 @@ Guide for setting up, running, and contributing to resume-operator.
 ## Prerequisites
 
 - Python 3.12+
-- An LLM API key (OpenAI, Anthropic, or Google)
+- [uv](https://docs.astral.sh/uv/) (Python package manager)
+- An LLM API key (OpenAI, Anthropic, Google, or OpenRouter)
 - Git
 
 ## Setup
@@ -15,13 +16,8 @@ Guide for setting up, running, and contributing to resume-operator.
 git clone <repo-url>
 cd resume-operator
 
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate   # Linux/Mac
-.venv\Scripts\activate      # Windows
-
-# Install with dev dependencies
-pip install -e ".[dev]"
+# Install with dev dependencies (creates .venv automatically)
+uv sync --dev
 
 # Configure environment
 cp .env.example .env
@@ -32,16 +28,16 @@ cp .env.example .env
 
 ```bash
 # Full optimization pipeline
-python -m resume_operator run --resume resume.pdf --job job_description.txt
+uv run python -m resume_operator run --resume resume.pdf --job job_description.txt
 
 # Parse resume only (no job description needed)
-python -m resume_operator parse-resume --resume resume.pdf
+uv run python -m resume_operator parse-resume --resume resume.pdf
 
 # ATS score only (quick check)
-python -m resume_operator score --resume resume.pdf --job job_description.txt
+uv run python -m resume_operator score --resume resume.pdf --job job_description.txt
 
 # Show all commands
-python -m resume_operator --help
+uv run python -m resume_operator --help
 ```
 
 ## LangGraph Concepts for This Project
@@ -114,16 +110,16 @@ Each node adds data to the state. Later nodes read earlier nodes' output.
 
 ```bash
 # Run all tests
-pytest
+uv run pytest
 
 # Run a specific test file
-pytest tests/test_state.py
+uv run pytest tests/test_state.py
 
 # Run with verbose output
-pytest -v
+uv run pytest -v
 
 # Run with coverage
-coverage run -m pytest && coverage report
+uv run coverage run -m pytest && uv run coverage report
 ```
 
 ### Mocking Pattern
@@ -159,16 +155,16 @@ Shared fixtures in `tests/conftest.py`:
 
 ```bash
 # Lint (check for issues)
-ruff check src/ tests/
+uv run ruff check src/ tests/
 
 # Format (auto-fix formatting)
-ruff format src/ tests/
+uv run ruff format src/ tests/
 
 # Type check (strict mode)
-mypy src/
+uv run mypy src/
 
 # Run everything
-ruff check src/ tests/ && ruff format --check src/ tests/ && mypy src/ && pytest
+uv run ruff check src/ tests/ && uv run ruff format --check src/ tests/ && uv run mypy src/ && uv run pytest
 ```
 
 ## Project Conventions

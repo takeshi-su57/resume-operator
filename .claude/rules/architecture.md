@@ -67,7 +67,7 @@ Tools are utility modules that handle external I/O. Nodes call tools; tools don'
 
 ### LLM Provider
 
-`get_llm()` returns a LangChain `BaseChatModel` based on the `LLM_PROVIDER` env var. Supports `openai`, `anthropic`, `google`. Provider-specific packages are imported lazily.
+`get_llm()` returns a LangChain `BaseChatModel` based on the `LLM_PROVIDER` env var. Supports `openai`, `anthropic`, `google`, `openrouter`. Provider-specific packages are imported lazily.
 
 ### PDF Parser
 
