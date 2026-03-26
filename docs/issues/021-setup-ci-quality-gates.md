@@ -30,7 +30,7 @@ Automated CI prevents quality regressions. Every PR should pass lint, type check
 
 ## Dependencies
 
-- #021
+- #016
 
 ## Labels
 

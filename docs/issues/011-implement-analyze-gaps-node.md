@@ -39,7 +39,7 @@ Gap analysis turns a numeric ATS score into actionable insights. Users need to k
 
 ## Dependencies
 
-- #011
+- #010
 
 ## Labels
 

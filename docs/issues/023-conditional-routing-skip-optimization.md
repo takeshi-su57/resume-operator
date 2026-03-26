@@ -41,7 +41,7 @@ If a resume already scores 0.95 against a job description, optimizing it would b
 
 ## Dependencies
 
-- #021
+- #016
 
 ## Labels
 

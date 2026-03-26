@@ -40,7 +40,7 @@ This is the core transformation — turning gap analysis into an improved resume
 
 ## Dependencies
 
-- #013
+- #011
 
 ## Labels
 

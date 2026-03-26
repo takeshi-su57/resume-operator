@@ -35,7 +35,7 @@ Users need clear instructions to deploy the tool beyond their local dev machine.
 
 ## Dependencies
 
-- #022
+- #017
 
 ## Labels
 

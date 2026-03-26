@@ -39,7 +39,7 @@ Individual node tests verify each piece works in isolation. This integration tes
 
 ## Dependencies
 
-- #018, #019
+- #014, #015
 
 ## Labels
 

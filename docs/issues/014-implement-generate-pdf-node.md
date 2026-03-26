@@ -41,7 +41,7 @@ The generate_pdf node converts the LLM's optimized content into a tangible PDF f
 
 ## Dependencies
 
-- #016
+- #013
 
 ## Labels
 
