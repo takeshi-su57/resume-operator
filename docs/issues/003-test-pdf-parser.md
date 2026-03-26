@@ -10,13 +10,13 @@ The PDF parser is the first external I/O tool — it must be reliable. Test-driv
 
 ## Tasks
 
-- [ ] Create `tests/test_pdf_parser.py`
-- [ ] Add a pytest fixture that generates a tiny PDF with known text using ReportLab (write to `tmp_path`)
-- [ ] Add a fixture that generates an image-only PDF (no extractable text)
-- [ ] Test: `test_extracts_text_from_valid_pdf` — verify known text is returned
-- [ ] Test: `test_raises_on_missing_file` — verify `FileNotFoundError`
-- [ ] Test: `test_raises_on_empty_text` — verify `ValueError` for image-only PDF
-- [ ] Test: `test_multipage_extraction` — verify text from multiple pages is concatenated
+- [x] Create `tests/test_pdf_parser.py`
+- [x] Add a pytest fixture that generates a tiny PDF with known text using ReportLab (write to `tmp_path`)
+- [x] Add a fixture that generates an image-only PDF (no extractable text)
+- [x] Test: `test_extracts_text_from_valid_pdf` — verify known text is returned
+- [x] Test: `test_raises_on_missing_file` — verify `FileNotFoundError`
+- [x] Test: `test_raises_on_empty_text` — verify `ValueError` for image-only PDF
+- [x] Test: `test_multipage_extraction` — verify text from multiple pages is concatenated
 
 ## Acceptance Criteria
 
