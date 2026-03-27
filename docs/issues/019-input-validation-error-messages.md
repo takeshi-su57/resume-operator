@@ -31,7 +31,7 @@ A good user experience starts with clear error messages. "File not found: resume
 
 ## Dependencies
 
-- #022
+- #017
 
 ## Labels
 

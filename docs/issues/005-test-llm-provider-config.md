@@ -10,15 +10,31 @@ The LLM provider is used by four nodes. Testing it with mocks ensures provider s
 
 ## Tasks
 
-- [ ] Create `tests/test_llm_provider.py`
-- [ ] Test: `test_returns_openai_model` — mock env vars + `ChatOpenAI`, verify it's called
-- [ ] Test: `test_returns_anthropic_model` — same for Anthropic
-- [ ] Test: `test_returns_google_model` — same for Google
-- [ ] Test: `test_raises_on_unsupported_provider` — verify `ValueError`
-- [ ] Test: `test_raises_on_missing_api_key` — verify `ValueError` with helpful message
-- [ ] Create `tests/test_config.py`
-- [ ] Test: `test_default_settings` — verify defaults match `.env.example`
-- [ ] Test: `test_settings_from_env` — mock env vars and verify settings load
+### `tests/test_llm_provider.py`
+
+- [x] Create `tests/test_llm_provider.py`
+- [x] `TestApiKeyValidation::test_raises_when_openai_key_missing` — mock settings, verify `ValueError` with "OPENAI_API_KEY not set"
+- [x] `TestApiKeyValidation::test_raises_when_anthropic_key_missing` — same for Anthropic
+- [x] `TestApiKeyValidation::test_raises_when_google_key_missing` — same for Google
+- [x] `TestApiKeyValidation::test_raises_when_openrouter_key_missing` — same for OpenRouter
+- [x] `TestApiKeyValidation::test_raises_on_unsupported_provider` — verify `ValueError` with "Unsupported LLM provider"
+- [x] `TestProviderModelOverrides::test_provider_override_selects_correct_path` — `provider` param overrides settings
+- [x] `TestProviderModelOverrides::test_model_override` — `model` param overrides settings
+- [x] `TestProviderConstruction::test_openai_path` — mock `ChatOpenAI`, verify it's called
+- [x] `TestProviderConstruction::test_anthropic_path` — mock `ChatAnthropic`, verify it's called
+- [x] `TestProviderConstruction::test_google_path` — mock `ChatGoogleGenerativeAI`, verify it's called
+- [x] `TestProviderConstruction::test_openrouter_path` — mock `ChatOpenAI`, verify `base_url` is set
+
+### `tests/test_config.py`
+
+- [x] Create `tests/test_config.py`
+- [x] `TestDefaultSettings::test_default_llm_provider` — verify default is `"openai"`
+- [x] `TestDefaultSettings::test_default_llm_model` — verify default is `"gpt-4o"`
+- [x] `TestDefaultSettings::test_default_api_keys_empty` — verify all API keys default to `""`
+- [x] `TestDefaultSettings::test_default_log_level` — verify default is `"INFO"`
+- [x] `TestSettingsFromEnv::test_settings_from_env` — mock Anthropic env vars, verify settings load
+- [x] `TestSettingsFromEnv::test_google_provider_from_env` — mock Google env vars
+- [x] `TestSettingsFromEnv::test_single_key_from_env` — mock single key, verify others remain default
 
 ## Acceptance Criteria
 

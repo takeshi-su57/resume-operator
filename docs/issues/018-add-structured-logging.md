@@ -32,7 +32,7 @@ When something goes wrong in production, logs are the primary debugging tool. St
 
 ## Dependencies
 
-- #022
+- #017
 
 ## Labels
 
