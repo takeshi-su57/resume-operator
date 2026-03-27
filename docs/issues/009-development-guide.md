@@ -10,16 +10,18 @@ The project uses LangGraph patterns that may be unfamiliar to contributors. A cl
 
 ## Tasks
 
-- [ ] Create `docs/development.md`
-- [ ] Section: Prerequisites (Python 3.12+, API key)
-- [ ] Section: Setup (clone, install, .env configuration)
-- [ ] Section: Running the agent (CLI commands with examples)
-- [ ] Section: LangGraph concepts for this project (StateGraph, nodes, edges, state, compile, invoke)
-- [ ] Section: Adding a new node (step-by-step with file locations)
-- [ ] Section: Adding a new tool (step-by-step)
-- [ ] Section: Testing (how to run, how to mock, fixture patterns)
-- [ ] Section: Code quality (ruff, mypy, pytest commands)
-- [ ] Reference `docs/architecture.md` for system diagram
+- [x] Enhance `docs/guides/development.md` with comprehensive developer onboarding content
+- [x] Section: Prerequisites (Python 3.12+, uv, API key, Git)
+- [x] Section: Setup (clone, install, .env configuration) with environment variables table
+- [x] Section: Running the agent (CLI commands with examples for run, parse-resume, score)
+- [x] Section: LangGraph concepts (StateGraph, State Model, Node Pattern, Pipeline Flow) with references to actual project files
+- [x] Section: Adding a new node (6-step guide with file locations and code examples)
+- [x] Section: Adding a new tool (3-step guide)
+- [x] Section: Testing (commands, mocking pattern with call-site patching, fixture usage examples)
+- [x] Section: Code quality (ruff check, ruff format, mypy, combined command)
+- [x] Reference `docs/architectures/architecture.md` for system diagram and data flow
+- [x] Section: Key Files Reference table mapping important files to their purpose
+- [x] Section: Project Conventions (commits, files, types, config, logging, security)
 
 ## Acceptance Criteria
 
@@ -29,7 +31,8 @@ The project uses LangGraph patterns that may be unfamiliar to contributors. A cl
 
 ## Key Files
 
-- `docs/development.md` (new)
+- `docs/guides/development.md` (enhanced)
+- `docs/issues/009-development-guide.md` (updated)
 
 ## Dependencies
 
