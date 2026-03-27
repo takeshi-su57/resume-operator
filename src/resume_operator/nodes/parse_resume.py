@@ -46,14 +46,14 @@ def parse_resume(state: ResumeOptimizerState) -> dict[str, Any]:
 
     # --- Build ResumeData ---
     resume_data = ResumeData(
-        name=parsed.get("name", ""),
-        email=parsed.get("email", ""),
-        phone=parsed.get("phone", ""),
-        summary=parsed.get("summary", ""),
-        experience=parsed.get("experience", []),
-        education=parsed.get("education", []),
-        skills=parsed.get("skills", []),
-        certifications=parsed.get("certifications", []),
+        name=parsed.get("name") or "",
+        email=parsed.get("email") or "",
+        phone=parsed.get("phone") or "",
+        summary=parsed.get("summary") or "",
+        experience=parsed.get("experience") or [],
+        education=parsed.get("education") or [],
+        skills=parsed.get("skills") or [],
+        certifications=parsed.get("certifications") or [],
         raw_text=raw_text,
     )
     result["resume"] = resume_data
