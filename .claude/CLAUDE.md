@@ -95,6 +95,7 @@ uv run mypy src/           # Type check
 - `.claude/rules/gh-issue.md` — Issue title format, templates for bugs/features/chores
 - `.claude/rules/ai-framework.md` — Sync protocol, skill/rule design, maintenance
 - `.claude/rules/documentation.md` — Docs structure, ADR conventions
+- `.claude/rules/logging.md` — Log levels, node logging pattern, LLM call logging, CLI verbosity
 
 ## Known Gaps
 

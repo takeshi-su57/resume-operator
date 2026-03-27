@@ -213,3 +213,4 @@ data/
 .env
 
 .claude/settings.local.json
+input/

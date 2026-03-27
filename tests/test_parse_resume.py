@@ -142,3 +142,32 @@ class TestParseResume:
             result = parse_resume(state)
 
         assert result["job_description"].raw_text == "Backend Engineer role"
+
+    @patch("resume_operator.nodes.parse_resume.get_llm")
+    @patch("resume_operator.nodes.parse_resume.extract_text")
+    def test_handles_null_fields_from_llm(
+        self, mock_extract: MagicMock, mock_get_llm: MagicMock, base_state: ResumeOptimizerState
+    ) -> None:
+        """LLM may return null for optional fields — node should coerce to defaults."""
+        mock_extract.return_value = SAMPLE_RESUME_TEXT
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value.content = """{
+            "name": "Jane Smith",
+            "email": "jane@example.com",
+            "phone": null,
+            "summary": null,
+            "experience": null,
+            "education": [],
+            "skills": ["Python"],
+            "certifications": null
+        }"""
+        mock_get_llm.return_value = mock_llm
+
+        result = parse_resume(base_state)
+
+        assert "resume" in result
+        assert result["resume"].phone == ""
+        assert result["resume"].summary == ""
+        assert result["resume"].experience == []
+        assert result["resume"].certifications == []
+        assert result["resume"].skills == ["Python"]
