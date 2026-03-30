@@ -1,5 +1,6 @@
 """CLI entry point for resume-operator."""
 
+import logging
 from pathlib import Path
 
 import typer
@@ -7,7 +8,7 @@ from rich.console import Console
 from rich.status import Status
 
 from resume_operator.graph import build_graph
-from resume_operator.state import ResumeData
+from resume_operator.state import ATSScore, GapAnalysis, ResumeData
 
 app = typer.Typer(
     name="resume-operator",
@@ -23,13 +24,72 @@ def run(
     output: Path = typer.Option(
         Path("data/optimized_resume.pdf"), "--output", "-o", help="Output PDF path"
     ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
 ) -> None:
     """Run the full resume optimization pipeline."""
-    # TODO: Build and invoke the LangGraph pipeline
-    console.print(f"[bold]Resume:[/bold] {resume}")
-    console.print(f"[bold]Job description:[/bold] {job}")
-    console.print(f"[bold]Output:[/bold] {output}")
-    console.print("[yellow]Not implemented yet.[/yellow]")
+    logging.basicConfig(
+        level=logging.DEBUG if verbose else logging.WARNING,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+    if not resume.exists() or not resume.is_file():
+        console.print(f"[red]Error: '{resume}' does not exist or is not a file.[/red]")
+        raise typer.Exit(code=1)
+
+    if not job.exists() or not job.is_file():
+        console.print(f"[red]Error: '{job}' does not exist or is not a file.[/red]")
+        raise typer.Exit(code=1)
+
+    graph = build_graph()
+    with Status("[bold cyan]Running optimization pipeline...", console=console):
+        result = graph.invoke({
+            "resume_path": str(resume),
+            "job_description_path": str(job),
+            "output_path": str(output),
+        })
+
+    errors: list[str] = result.get("errors", [])
+    if errors:
+        console.print("\n[bold red]Errors:[/bold red]")
+        for error in errors:
+            console.print(f"  [red]• {error}[/red]")
+
+    # Display resume data
+    resume_data: ResumeData = result.get("resume", ResumeData())
+    if resume_data.name:
+        console.print("\n[bold green]Parsed Resume:[/bold green]")
+        console.print(f"  Name: {resume_data.name}")
+        console.print(f"  Email: {resume_data.email}")
+        console.print(f"  Skills: {', '.join(resume_data.skills)}")
+
+    # Display ATS score
+    ats: ATSScore = result.get("ats_score", ATSScore())
+    if ats.score > 0:
+        console.print(f"\n[bold green]ATS Score:[/bold green] {ats.score:.0%}")
+        console.print(f"  Reasoning: {ats.reasoning}")
+        console.print(f"  Matches: {', '.join(ats.keyword_matches)}")
+        console.print(f"  Gaps: {', '.join(ats.keyword_gaps)}")
+
+    # Display gap analysis
+    gaps: GapAnalysis = result.get("gap_analysis", GapAnalysis())
+    if gaps.gaps or gaps.strengths or gaps.suggestions:
+        console.print("\n[bold green]Gap Analysis:[/bold green]")
+        if gaps.strengths:
+            console.print("  [green]Strengths:[/green]")
+            for s in gaps.strengths:
+                console.print(f"    ✓ {s}")
+        if gaps.gaps:
+            console.print("  [yellow]Gaps:[/yellow]")
+            for g in gaps.gaps:
+                console.print(f"    ✗ {g}")
+        if gaps.suggestions:
+            console.print("  [cyan]Suggestions:[/cyan]")
+            for s in gaps.suggestions:
+                console.print(f"    → {s}")
+
+    if not errors:
+        console.print("\n[bold green]Pipeline completed successfully.[/bold green]")
 
 
 @app.command(name="parse-resume")
