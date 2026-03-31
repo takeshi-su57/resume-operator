@@ -1,12 +1,12 @@
 """Node: Extract structured data from resume PDF."""
 
-import json
 import logging
 from pathlib import Path
 from typing import Any
 
 from resume_operator.prompts.resume_parsing import PARSE_RESUME
 from resume_operator.state import JobDescription, ResumeData, ResumeOptimizerState
+from resume_operator.tools.json_parser import extract_json
 from resume_operator.tools.llm_provider import get_llm
 from resume_operator.tools.pdf_parser import extract_text
 
@@ -47,8 +47,8 @@ def parse_resume(state: ResumeOptimizerState) -> dict[str, Any]:
         response = llm.invoke(prompt)
         content = response.content if hasattr(response, "content") else str(response)
         logger.debug("parse_resume: LLM response: %s", content)
-        parsed = json.loads(str(content))
-    except json.JSONDecodeError as exc:
+        parsed = extract_json(str(content))
+    except ValueError as exc:
         logger.error("parse_resume: LLM returned invalid JSON: %s", exc)
         errors.append(f"parse_resume: LLM returned invalid JSON: {exc}")
         return {"errors": errors}

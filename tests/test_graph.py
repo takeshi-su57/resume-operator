@@ -9,6 +9,7 @@ LangGraph Concepts:
 - Stub nodes returning {} are valid — they simply don't modify state, so the pipeline continues.
 """
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from langgraph.graph.state import CompiledStateGraph
@@ -48,31 +49,49 @@ class TestGraphAssembly:
         node_names = [n for n in graph.get_graph().nodes if not n.startswith("__")]
         assert sorted(node_names) == sorted(EXPECTED_NODES)
 
+    @patch("resume_operator.nodes.report_results.RESULTS_PATH")
+    @patch("resume_operator.nodes.generate_pdf.create_pdf")
+    @patch("resume_operator.nodes.optimize_content.get_llm")
+    @patch("resume_operator.nodes.analyze_gaps.get_llm")
+    @patch("resume_operator.nodes.ats_score.get_llm")
     @patch("resume_operator.nodes.parse_resume.get_llm")
     @patch("resume_operator.nodes.parse_resume.extract_text")
     def test_graph_runs_parse_resume(
-        self, mock_extract: MagicMock, mock_get_llm: MagicMock
+        self,
+        mock_extract: MagicMock,
+        mock_parse_llm: MagicMock,
+        mock_ats_llm: MagicMock,
+        mock_gaps_llm: MagicMock,
+        mock_optimize_llm: MagicMock,
+        mock_create_pdf: MagicMock,
+        mock_results_path: MagicMock,
+        tmp_path: Path,
     ) -> None:
         """Invoking the graph executes parse_resume and merges its output into state."""
         mock_extract.return_value = "Jane Smith\njane@example.com"
         mock_llm = MagicMock()
         mock_llm.invoke.return_value.content = VALID_LLM_JSON
-        mock_get_llm.return_value = mock_llm
+        mock_parse_llm.return_value = mock_llm
 
-        graph = build_graph()
+        # Other LLM-calling nodes: let them fail gracefully
+        mock_ats_llm.side_effect = RuntimeError("not under test")
+        mock_gaps_llm.side_effect = RuntimeError("not under test")
+        mock_optimize_llm.side_effect = RuntimeError("not under test")
 
-        # invoke() runs the full pipeline: parse_resume → ats_score → ... → report_results
-        # Only parse_resume does real work here; the remaining stub nodes return {} (no-op).
-        result = graph.invoke(
-            {
-                "resume_path": "test.pdf",
-                "job_description_text": "Backend Engineer role",
-            }
-        )
+        results_file = tmp_path / "data" / "results.json"
+        with patch("resume_operator.nodes.report_results.RESULTS_PATH", results_file):
+            graph = build_graph()
+
+            result = graph.invoke(
+                {
+                    "resume_path": "test.pdf",
+                    "job_description_text": "Backend Engineer role",
+                }
+            )
 
         # parse_resume was called — verify via mock
         mock_extract.assert_called_once()
-        mock_get_llm.assert_called_once()
+        mock_parse_llm.assert_called_once()
 
         # State merging: parse_resume returned {"resume": ResumeData, "job_description": ...}
         # LangGraph merged those into the pipeline state dict

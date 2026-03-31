@@ -1,11 +1,11 @@
 """Node: Optimize resume content based on gap analysis."""
 
-import json
 import logging
 from typing import Any
 
 from resume_operator.prompts.content_optimization import OPTIMIZE_CONTENT
 from resume_operator.state import OptimizedResume, ResumeOptimizerState
+from resume_operator.tools.json_parser import extract_json
 from resume_operator.tools.llm_provider import get_llm
 
 logger = logging.getLogger(__name__)
@@ -32,8 +32,8 @@ def optimize_content(state: ResumeOptimizerState) -> dict[str, Any]:
         response = llm.invoke(prompt)
         content = response.content if hasattr(response, "content") else str(response)
         logger.debug("optimize_content: LLM response: %s", content)
-        parsed = json.loads(str(content))
-    except json.JSONDecodeError as exc:
+        parsed = extract_json(str(content))
+    except ValueError as exc:
         logger.error("optimize_content: LLM returned invalid JSON: %s", exc)
         errors.append(f"optimize_content: LLM returned invalid JSON: {exc}")
         return {"errors": errors}
