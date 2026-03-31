@@ -105,3 +105,13 @@ class TestGeneratePdf:
         result = generate_pdf(sample_state)
 
         assert "errors" not in result
+
+    def test_empty_sections_skips(self, sample_state: ResumeOptimizerState) -> None:
+        """Skips PDF generation when optimized sections are empty."""
+        sample_state.optimized_resume = OptimizedResume(sections={})
+
+        result = generate_pdf(sample_state)
+
+        assert "errors" in result
+        assert any("no optimized sections" in e for e in result["errors"])
+        assert "output_path" not in result

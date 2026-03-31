@@ -21,6 +21,13 @@ def generate_pdf(state: ResumeOptimizerState) -> dict[str, Any]:
     logger.info("generate_pdf: starting")
     errors: list[str] = list(state.errors)
 
+    if not state.optimized_resume.sections:
+        logger.warning(
+            "generate_pdf: skipping — no optimized sections (optimize_content may have failed)"
+        )
+        errors.append("generate_pdf: skipping — no optimized sections")
+        return {"errors": errors}
+
     output_path = state.output_path or DEFAULT_OUTPUT_PATH
 
     try:

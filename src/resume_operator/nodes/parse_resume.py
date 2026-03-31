@@ -24,6 +24,11 @@ def parse_resume(state: ResumeOptimizerState) -> dict[str, Any]:
     errors: list[str] = list(state.errors)
     result: dict[str, Any] = {}
 
+    if not state.resume_path:
+        logger.error("parse_resume: resume_path is empty")
+        errors.append("parse_resume: resume_path is empty")
+        return {"errors": errors}
+
     # --- Extract resume text ---
     try:
         raw_text = extract_text(Path(state.resume_path))
