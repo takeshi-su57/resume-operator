@@ -16,13 +16,15 @@ If a resume already scores 0.95 against a job description, optimizing it would b
 
 ## Tasks
 
-- [ ] Add `ATS_SKIP_THRESHOLD` to `config.py` Settings class (default: 0.9)
-- [ ] Add `ATS_SKIP_THRESHOLD=0.9` to `.env.example`
-- [ ] In `graph.py`, replace the `ats_score -> analyze_gaps` edge with a conditional edge
-- [ ] Define routing function: if `state.ats_score.score >= threshold`, route to `report_results`; else route to `analyze_gaps`
-- [ ] Use `graph.add_conditional_edges("ats_score", routing_fn, {"optimize": "analyze_gaps", "skip": "report_results"})`
-- [ ] Update `report_results` to note whether optimization was skipped
-- [ ] Write tests in `test_graph.py`: verify routing for scores above and below threshold
+- [x] Add `ats_skip_threshold: float = 0.9` to `config.py` Settings class
+- [x] Add `ATS_SKIP_THRESHOLD=0.9` to `.env.example`
+- [x] In `graph.py`, replace `ats_score -> analyze_gaps` edge with `add_conditional_edges` using `_route_after_ats_score` routing function
+- [x] Define routing function: reads threshold from config, returns `"skip"` if score >= threshold, `"optimize"` otherwise, with INFO logging of the routing decision
+- [x] Use `graph.add_conditional_edges("ats_score", _route_after_ats_score, {"optimize": "analyze_gaps", "skip": "report_results"})`
+- [x] Update `report_results` to include `optimization_skipped` field in report (derived from empty `optimized_resume.sections`)
+- [x] Write 4 routing tests in `test_graph.py::TestConditionalRouting`: high score, exact threshold, low score, zero/default score
+- [x] Create `docs/architecture.md` with conditional flow ASCII diagram, component table, data flow, and error handling description
+- [x] Update `tests/test_report_results.py` expected keys to include `optimization_skipped`
 
 ## Acceptance Criteria
 

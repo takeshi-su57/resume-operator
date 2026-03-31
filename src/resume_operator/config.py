@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     google_api_key: str = ""
     openrouter_api_key: str = ""
     log_level: str = "INFO"
+    ats_skip_threshold: float = 0.9
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

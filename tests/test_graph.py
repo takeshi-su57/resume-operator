@@ -14,7 +14,8 @@ from unittest.mock import MagicMock, patch
 
 from langgraph.graph.state import CompiledStateGraph
 
-from resume_operator.graph import build_graph
+from resume_operator.graph import _route_after_ats_score, build_graph
+from resume_operator.state import ATSScore, ResumeOptimizerState
 
 EXPECTED_NODES = [
     "parse_resume",
@@ -101,3 +102,37 @@ class TestGraphAssembly:
 
         assert "job_description" in result
         assert result["job_description"].raw_text == "Backend Engineer role"
+
+
+class TestConditionalRouting:
+    @patch("resume_operator.graph.get_settings")
+    def test_high_score_routes_to_skip(self, mock_settings: MagicMock) -> None:
+        """ATS score at or above threshold routes to 'skip'."""
+        mock_settings.return_value.ats_skip_threshold = 0.9
+        state = ResumeOptimizerState(ats_score=ATSScore(score=0.95))
+
+        assert _route_after_ats_score(state) == "skip"
+
+    @patch("resume_operator.graph.get_settings")
+    def test_threshold_score_routes_to_skip(self, mock_settings: MagicMock) -> None:
+        """ATS score exactly at threshold routes to 'skip'."""
+        mock_settings.return_value.ats_skip_threshold = 0.9
+        state = ResumeOptimizerState(ats_score=ATSScore(score=0.9))
+
+        assert _route_after_ats_score(state) == "skip"
+
+    @patch("resume_operator.graph.get_settings")
+    def test_low_score_routes_to_optimize(self, mock_settings: MagicMock) -> None:
+        """ATS score below threshold routes to 'optimize'."""
+        mock_settings.return_value.ats_skip_threshold = 0.9
+        state = ResumeOptimizerState(ats_score=ATSScore(score=0.72))
+
+        assert _route_after_ats_score(state) == "optimize"
+
+    @patch("resume_operator.graph.get_settings")
+    def test_zero_score_routes_to_optimize(self, mock_settings: MagicMock) -> None:
+        """Default zero score routes to 'optimize'."""
+        mock_settings.return_value.ats_skip_threshold = 0.9
+        state = ResumeOptimizerState()
+
+        assert _route_after_ats_score(state) == "optimize"

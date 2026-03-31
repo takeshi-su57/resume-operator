@@ -23,12 +23,14 @@ def report_results(state: ResumeOptimizerState) -> dict[str, Any]:
     errors: list[str] = list(state.errors)
 
     try:
+        optimization_skipped = not state.optimized_resume.sections
         report: dict[str, object] = {
             "timestamp": datetime.now().isoformat(),
             "resume_path": state.resume_path,
             "job_description_path": state.job_description_path,
             "ats_score": state.ats_score.model_dump(),
             "gap_analysis": state.gap_analysis.model_dump(),
+            "optimization_skipped": optimization_skipped,
             "optimization_changes": state.optimized_resume.changes_made,
             "output_path": state.output_path,
             "errors": list(state.errors),
