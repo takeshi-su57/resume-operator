@@ -29,8 +29,10 @@ def analyze_gaps(state: ResumeOptimizerState) -> dict[str, Any]:
             ats_score=state.ats_score.score,
             keyword_gaps=state.ats_score.keyword_gaps,
         )
+        logger.debug("analyze_gaps: LLM prompt: %s", prompt)
         response = llm.invoke(prompt)
         content = response.content if hasattr(response, "content") else str(response)
+        logger.debug("analyze_gaps: LLM response: %s", content)
         parsed = json.loads(str(content))
     except json.JSONDecodeError as exc:
         logger.error("analyze_gaps: LLM returned invalid JSON: %s", exc)

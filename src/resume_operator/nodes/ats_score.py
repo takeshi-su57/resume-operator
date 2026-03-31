@@ -27,8 +27,10 @@ def ats_score(state: ResumeOptimizerState) -> dict[str, Any]:
             resume_json=state.resume.model_dump_json(),
             job_description=state.job_description.raw_text,
         )
+        logger.debug("ats_score: LLM prompt: %s", prompt)
         response = llm.invoke(prompt)
         content = response.content if hasattr(response, "content") else str(response)
+        logger.debug("ats_score: LLM response: %s", content)
         parsed = json.loads(str(content))
     except json.JSONDecodeError as exc:
         logger.error("ats_score: LLM returned invalid JSON: %s", exc)

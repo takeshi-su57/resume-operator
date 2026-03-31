@@ -7,6 +7,7 @@ import typer
 from rich.console import Console
 from rich.status import Status
 
+from resume_operator.config import get_settings
 from resume_operator.graph import build_graph, build_score_graph
 from resume_operator.state import ATSScore, GapAnalysis, OptimizedResume, ResumeData
 
@@ -15,6 +16,20 @@ app = typer.Typer(
     help="Resume Optimizer AI Agent — tailor your resume to any job description.",
 )
 console = Console()
+
+
+def _setup_logging(verbose: bool) -> None:
+    """Configure logging from config.log_level, overridden by --verbose."""
+    if verbose:
+        level = logging.DEBUG
+    else:
+        level_name = get_settings().log_level.upper()
+        level = getattr(logging, level_name, logging.WARNING)
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
 
 
 def _score_color(score: float) -> str:
@@ -36,11 +51,7 @@ def run(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
 ) -> None:
     """Run the full resume optimization pipeline."""
-    logging.basicConfig(
-        level=logging.DEBUG if verbose else logging.WARNING,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
-    )
+    _setup_logging(verbose)
 
     if not resume.exists() or not resume.is_file():
         console.print(f"[red]Error: '{resume}' does not exist or is not a file.[/red]")
@@ -121,8 +132,11 @@ def run(
 @app.command(name="parse-resume")
 def parse_resume(
     resume: Path = typer.Option(..., "--resume", "-r", help="Path to resume PDF"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
 ) -> None:
     """Parse a resume PDF and display extracted data."""
+    _setup_logging(verbose)
+
     if not resume.exists() or not resume.is_file():
         console.print(f"[red]Error: '{resume}' does not exist or is not a file.[/red]")
         raise typer.Exit(code=1)
@@ -156,11 +170,7 @@ def score(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
 ) -> None:
     """Score resume ATS compatibility against a job description."""
-    logging.basicConfig(
-        level=logging.DEBUG if verbose else logging.WARNING,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
-    )
+    _setup_logging(verbose)
 
     if not resume.exists() or not resume.is_file():
         console.print(f"[red]Error: '{resume}' does not exist or is not a file.[/red]")
