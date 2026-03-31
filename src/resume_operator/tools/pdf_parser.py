@@ -1,8 +1,11 @@
 """Extract text from PDF files using PyMuPDF."""
 
+import logging
 from pathlib import Path
 
 import fitz
+
+logger = logging.getLogger(__name__)
 
 
 def extract_text(pdf_path: Path) -> str:
@@ -18,6 +21,8 @@ def extract_text(pdf_path: Path) -> str:
         FileNotFoundError: If the PDF file does not exist.
         ValueError: If the PDF contains no extractable text.
     """
+    logger.info("pdf_parser: extracting text from %s", pdf_path)
+
     if not pdf_path.exists():
         raise FileNotFoundError(f"PDF file not found: {pdf_path}")
 
@@ -31,4 +36,5 @@ def extract_text(pdf_path: Path) -> str:
     if not text:
         raise ValueError(f"No extractable text found in PDF: {pdf_path}")
 
+    logger.info("pdf_parser: extracted %d chars from %d pages", len(text), len(pages))
     return text

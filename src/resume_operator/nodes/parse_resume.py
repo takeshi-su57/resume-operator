@@ -20,6 +20,7 @@ def parse_resume(state: ResumeOptimizerState) -> dict[str, Any]:
     ResumeData fields (name, experience, education, skills, etc.).
     Also reads the job description text from file or state.
     """
+    logger.info("parse_resume: starting")
     errors: list[str] = list(state.errors)
     result: dict[str, Any] = {}
 
@@ -27,20 +28,27 @@ def parse_resume(state: ResumeOptimizerState) -> dict[str, Any]:
     try:
         raw_text = extract_text(Path(state.resume_path))
     except Exception as exc:
+        logger.error("parse_resume: PDF extraction failed: %s", exc)
         errors.append(f"parse_resume: PDF extraction failed: {exc}")
         return {"errors": errors}
+
+    logger.debug("parse_resume: raw text (%d chars)", len(raw_text))
 
     # --- Call LLM to structure the resume ---
     try:
         llm = get_llm()
         prompt = PARSE_RESUME.format(resume_text=raw_text)
+        logger.debug("parse_resume: LLM prompt: %s", prompt)
         response = llm.invoke(prompt)
         content = response.content if hasattr(response, "content") else str(response)
+        logger.debug("parse_resume: LLM response: %s", content)
         parsed = json.loads(str(content))
     except json.JSONDecodeError as exc:
+        logger.error("parse_resume: LLM returned invalid JSON: %s", exc)
         errors.append(f"parse_resume: LLM returned invalid JSON: {exc}")
         return {"errors": errors}
     except Exception as exc:
+        logger.error("parse_resume: LLM call failed: %s", exc)
         errors.append(f"parse_resume: LLM call failed: {exc}")
         return {"errors": errors}
 
@@ -64,10 +72,18 @@ def parse_resume(state: ResumeOptimizerState) -> dict[str, Any]:
         try:
             job_raw_text = Path(state.job_description_path).read_text(encoding="utf-8")
         except Exception as exc:
+            logger.error("parse_resume: failed to read job description: %s", exc)
             errors.append(f"parse_resume: failed to read job description: {exc}")
 
     if job_raw_text:
         result["job_description"] = JobDescription(raw_text=job_raw_text)
+
+    logger.info(
+        "parse_resume: completed — skills=%d, experience=%d, education=%d",
+        len(resume_data.skills),
+        len(resume_data.experience),
+        len(resume_data.education),
+    )
 
     if errors != list(state.errors):
         result["errors"] = errors

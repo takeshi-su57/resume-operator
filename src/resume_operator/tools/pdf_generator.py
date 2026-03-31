@@ -1,5 +1,6 @@
 """Generate PDF resumes using ReportLab."""
 
+import logging
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -7,6 +8,8 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+
+logger = logging.getLogger(__name__)
 
 
 def generate_pdf(sections: dict[str, str], output_path: Path) -> Path:
@@ -22,6 +25,8 @@ def generate_pdf(sections: dict[str, str], output_path: Path) -> Path:
     Raises:
         ValueError: If sections is empty.
     """
+    logger.info("pdf_generator: generating PDF at %s", output_path)
+
     if not sections:
         raise ValueError("sections must not be empty")
 
@@ -69,4 +74,5 @@ def generate_pdf(sections: dict[str, str], output_path: Path) -> Path:
             flowables.append(Paragraph(safe, body_style))
 
     doc.build(flowables)
+    logger.info("pdf_generator: completed — %d sections, %s", len(sections), output_path)
     return output_path

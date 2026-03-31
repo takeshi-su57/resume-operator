@@ -10,13 +10,14 @@ When something goes wrong in production, logs are the primary debugging tool. St
 
 ## Tasks
 
-- [ ] Create logging setup in `config.py` or new `src/resume_operator/logging_config.py` based on `LOG_LEVEL` env var
-- [ ] Add logger to each node file: `logger = logging.getLogger(__name__)`
-- [ ] Log at INFO: node started, node completed, ATS score value, output path
-- [ ] Log at DEBUG: prompt text sent to LLM, raw LLM response, parsed data
-- [ ] Log at ERROR: exception details when nodes fail
-- [ ] Never log: API keys, full resume text at INFO, personal data at INFO
-- [ ] Initialize logging in `main.py` before graph execution
+- [x] Use existing `config.py` `log_level` field (already defined, was unused); add `_setup_logging(verbose)` helper in `main.py` that reads `get_settings().log_level`, overridden by `--verbose` flag
+- [x] Add `logger = logging.getLogger(__name__)` to all nodes (6 files) and all tools (3 files) — 9 files total, 38 logging calls
+- [x] Log at INFO: node started/completed with key metrics (skills count, score value, file sizes, output paths), tool entry/completion (extraction chars/pages, PDF sections, LLM provider/model)
+- [x] Log at DEBUG: LLM prompt text, raw LLM response, raw resume text length — in all 4 LLM-calling nodes (`parse_resume`, `ats_score`, `analyze_gaps`, `optimize_content`)
+- [x] Log at ERROR: exception details in all nodes before appending to `state.errors`
+- [x] Security verified: no API keys logged at any level, raw resume text only at DEBUG, no PII at INFO
+- [x] Initialize logging in all 3 CLI commands (`run`, `score`, `parse-resume`) via `_setup_logging()` before graph execution
+- [x] Added `--verbose` flag to `parse-resume` command (was missing)
 
 ## Acceptance Criteria
 

@@ -28,8 +28,10 @@ def optimize_content(state: ResumeOptimizerState) -> dict[str, Any]:
             job_description=state.job_description.raw_text,
             gap_analysis=state.gap_analysis.model_dump_json(),
         )
+        logger.debug("optimize_content: LLM prompt: %s", prompt)
         response = llm.invoke(prompt)
         content = response.content if hasattr(response, "content") else str(response)
+        logger.debug("optimize_content: LLM response: %s", content)
         parsed = json.loads(str(content))
     except json.JSONDecodeError as exc:
         logger.error("optimize_content: LLM returned invalid JSON: %s", exc)

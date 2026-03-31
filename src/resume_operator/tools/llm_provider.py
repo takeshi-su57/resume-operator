@@ -1,9 +1,13 @@
 """LangChain model factory — returns a BaseChatModel based on config."""
 
+import logging
+
 from langchain_core.language_models import BaseChatModel
 from pydantic import SecretStr
 
 from resume_operator.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 # Maps provider name to (Settings attribute, environment variable name).
 _PROVIDER_KEY_MAP: dict[str, tuple[str, str]] = {
@@ -41,6 +45,8 @@ def get_llm(
     if not api_key:
         msg = f"{env_var} not set. Add it to your .env file."
         raise ValueError(msg)
+
+    logger.info("LLM provider: provider=%s, model=%s", resolved_provider, resolved_model)
 
     if resolved_provider == "openai":
         from langchain_openai import ChatOpenAI
