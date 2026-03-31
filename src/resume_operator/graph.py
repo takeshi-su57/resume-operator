@@ -15,7 +15,7 @@ from resume_operator.state import ResumeOptimizerState
 
 
 def build_graph() -> CompiledStateGraph[Any]:
-    """Build and compile the resume optimization graph."""
+    """Build and compile the full resume optimization graph."""
     graph = StateGraph(ResumeOptimizerState)
 
     # Register nodes
@@ -34,5 +34,19 @@ def build_graph() -> CompiledStateGraph[Any]:
     graph.add_edge("optimize_content", "generate_pdf")
     graph.add_edge("generate_pdf", "report_results")
     graph.add_edge("report_results", END)
+
+    return graph.compile()
+
+
+def build_score_graph() -> CompiledStateGraph[Any]:
+    """Build a partial graph for parse + ATS score only."""
+    graph = StateGraph(ResumeOptimizerState)
+
+    graph.add_node("parse_resume", parse_resume)
+    graph.add_node("ats_score", ats_score)
+
+    graph.add_edge(START, "parse_resume")
+    graph.add_edge("parse_resume", "ats_score")
+    graph.add_edge("ats_score", END)
 
     return graph.compile()
