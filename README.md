@@ -1,5 +1,7 @@
 # resume-operator
 
+[![CI](https://github.com/takeshi-su57/resume-operator/actions/workflows/ci.yml/badge.svg)](https://github.com/takeshi-su57/resume-operator/actions/workflows/ci.yml)
+
 Automatically tailors resumes to match job descriptions by highlighting relevant skills and experience while keeping the original profile intact.
 
 ## Features

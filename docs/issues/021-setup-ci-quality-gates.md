@@ -10,12 +10,12 @@ Automated CI prevents quality regressions. Every PR should pass lint, type check
 
 ## Tasks
 
-- [ ] Create `.github/workflows/ci.yml` with a Python 3.12 job
-- [ ] Steps: checkout, install deps (`pip install -e ".[dev]"`), ruff check, ruff format --check, mypy, pytest
-- [ ] Add `pytest --tb=short` for concise test output in CI
-- [ ] Add a badge to `README.md` showing CI status
-- [ ] Ensure CI runs on push to `main` and on all PRs
-- [ ] Optionally: create `.pre-commit-config.yaml` with ruff hooks
+- [x] Create `.github/workflows/ci.yml` with a Python 3.12 job on ubuntu-latest
+- [x] Steps: checkout, install uv (`astral-sh/setup-uv@v4`), install Python 3.12 via uv, `uv sync --dev`, ruff check, ruff format --check, mypy, pytest --tb=short
+- [x] Add `pytest --tb=short` for concise test output in CI
+- [x] Add CI badge to `README.md` linking to Actions workflow page
+- [x] CI triggers on push to `main` and on all pull requests
+- [x] Created `.pre-commit-config.yaml` with ruff check (--fix) and ruff-format hooks via `ruff-pre-commit`
 
 ## Acceptance Criteria
 
