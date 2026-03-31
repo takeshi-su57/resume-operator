@@ -24,6 +24,7 @@ EXPECTED_KEYS = {
     "job_description_path",
     "ats_score",
     "gap_analysis",
+    "optimization_skipped",
     "optimization_changes",
     "output_path",
     "errors",
