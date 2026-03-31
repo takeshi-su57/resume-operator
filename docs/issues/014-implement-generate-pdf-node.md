@@ -12,19 +12,23 @@ The generate_pdf node converts the LLM's optimized content into a tangible PDF f
 
 ### Implementation
 
-- [ ] Import `tools.pdf_generator.generate_pdf`
-- [ ] Read `state.optimized_resume.sections` and `state.output_path`
-- [ ] If `output_path` is empty, default to `data/optimized_resume.pdf`
-- [ ] Call `generate_pdf(sections, Path(output_path))`
-- [ ] Return `{"output_path": str(result_path)}`
-- [ ] Error handling: catch exceptions, record in `state.errors`
+- [x] Import `tools.pdf_generator.generate_pdf` (aliased as `create_pdf` to avoid name collision with node function)
+- [x] Read `state.optimized_resume.sections` and `state.output_path`
+- [x] If `output_path` is empty, default to `data/optimized_resume.pdf`
+- [x] Call `generate_pdf(sections, Path(output_path))`
+- [x] Return `{"output_path": str(result_path)}`
+- [x] Error handling: catch exceptions, record in `state.errors`
+- [x] Logging: INFO at node start/completion (with output path and file size), ERROR on failure
 
 ### Tests
 
-- [ ] Create `tests/test_generate_pdf_node.py`
-- [ ] Mock `tools.pdf_generator.generate_pdf`, test node calls it correctly
-- [ ] Test error handling when generator fails
-- [ ] Test default output path when none specified
+- [x] Create `tests/test_generate_pdf.py` (named to match project convention: `test_<module>.py`)
+- [x] Mock `tools.pdf_generator.generate_pdf`, test node calls it with correct sections and path
+- [x] Test error handling when generator fails (errors recorded, no output_path returned)
+- [x] Test default output path when none specified
+- [x] Test returns only changed fields (output_path, optionally errors)
+- [x] Test preserves existing errors when new error occurs
+- [x] Test errors key omitted on success
 
 ## Acceptance Criteria
 
