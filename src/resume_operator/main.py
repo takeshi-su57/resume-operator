@@ -7,14 +7,23 @@ import typer
 from rich.console import Console
 from rich.status import Status
 
-from resume_operator.graph import build_graph
-from resume_operator.state import ATSScore, GapAnalysis, ResumeData
+from resume_operator.graph import build_graph, build_score_graph
+from resume_operator.state import ATSScore, GapAnalysis, OptimizedResume, ResumeData
 
 app = typer.Typer(
     name="resume-operator",
     help="Resume Optimizer AI Agent — tailor your resume to any job description.",
 )
 console = Console()
+
+
+def _score_color(score: float) -> str:
+    """Return Rich color tag based on ATS score value."""
+    if score >= 0.7:
+        return "green"
+    if score >= 0.4:
+        return "yellow"
+    return "red"
 
 
 @app.command()
@@ -43,11 +52,13 @@ def run(
 
     graph = build_graph()
     with Status("[bold cyan]Running optimization pipeline...", console=console):
-        result = graph.invoke({
-            "resume_path": str(resume),
-            "job_description_path": str(job),
-            "output_path": str(output),
-        })
+        result = graph.invoke(
+            {
+                "resume_path": str(resume),
+                "job_description_path": str(job),
+                "output_path": str(output),
+            }
+        )
 
     errors: list[str] = result.get("errors", [])
     if errors:
@@ -63,13 +74,16 @@ def run(
         console.print(f"  Email: {resume_data.email}")
         console.print(f"  Skills: {', '.join(resume_data.skills)}")
 
-    # Display ATS score
+    # Display ATS score with color coding
     ats: ATSScore = result.get("ats_score", ATSScore())
     if ats.score > 0:
-        console.print(f"\n[bold green]ATS Score:[/bold green] {ats.score:.0%}")
+        color = _score_color(ats.score)
+        console.print(f"\n[bold green]ATS Score:[/bold green] [{color}]{ats.score:.0%}[/{color}]")
         console.print(f"  Reasoning: {ats.reasoning}")
-        console.print(f"  Matches: {', '.join(ats.keyword_matches)}")
-        console.print(f"  Gaps: {', '.join(ats.keyword_gaps)}")
+        if ats.keyword_matches:
+            console.print(f"  [green]Matches:[/green] {', '.join(ats.keyword_matches)}")
+        if ats.keyword_gaps:
+            console.print(f"  [yellow]Gaps:[/yellow] {', '.join(ats.keyword_gaps)}")
 
     # Display gap analysis
     gaps: GapAnalysis = result.get("gap_analysis", GapAnalysis())
@@ -87,6 +101,18 @@ def run(
             console.print("  [cyan]Suggestions:[/cyan]")
             for s in gaps.suggestions:
                 console.print(f"    → {s}")
+
+    # Display optimization changes
+    optimized: OptimizedResume = result.get("optimized_resume", OptimizedResume())
+    if optimized.changes_made:
+        console.print("\n[bold green]Optimization Changes:[/bold green]")
+        for change in optimized.changes_made:
+            console.print(f"  → {change}")
+
+    # Display output path
+    output_result: str = result.get("output_path", "")
+    if output_result:
+        console.print(f"\n[bold green]Output PDF:[/bold green] {output_result}")
 
     if not errors:
         console.print("\n[bold green]Pipeline completed successfully.[/bold green]")
@@ -127,12 +153,49 @@ def parse_resume(
 def score(
     resume: Path = typer.Option(..., "--resume", "-r", help="Path to resume PDF"),
     job: Path = typer.Option(..., "--job", "-j", help="Path to job description text file"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
 ) -> None:
     """Score resume ATS compatibility against a job description."""
-    # TODO: Run parse_resume + ats_score nodes and display results
-    console.print(f"[bold]Resume:[/bold] {resume}")
-    console.print(f"[bold]Job description:[/bold] {job}")
-    console.print("[yellow]Not implemented yet.[/yellow]")
+    logging.basicConfig(
+        level=logging.DEBUG if verbose else logging.WARNING,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+    if not resume.exists() or not resume.is_file():
+        console.print(f"[red]Error: '{resume}' does not exist or is not a file.[/red]")
+        raise typer.Exit(code=1)
+
+    if not job.exists() or not job.is_file():
+        console.print(f"[red]Error: '{job}' does not exist or is not a file.[/red]")
+        raise typer.Exit(code=1)
+
+    graph = build_score_graph()
+    with Status("[bold cyan]Scoring resume...", console=console):
+        result = graph.invoke(
+            {
+                "resume_path": str(resume),
+                "job_description_path": str(job),
+            }
+        )
+
+    errors: list[str] = result.get("errors", [])
+    if errors:
+        console.print("\n[bold red]Errors:[/bold red]")
+        for error in errors:
+            console.print(f"  [red]• {error}[/red]")
+
+    ats: ATSScore = result.get("ats_score", ATSScore())
+    if ats.score > 0:
+        color = _score_color(ats.score)
+        console.print(f"\n[bold green]ATS Score:[/bold green] [{color}]{ats.score:.0%}[/{color}]")
+        console.print(f"  Reasoning: {ats.reasoning}")
+        if ats.keyword_matches:
+            console.print(f"  [green]Matches:[/green] {', '.join(ats.keyword_matches)}")
+        if ats.keyword_gaps:
+            console.print(f"  [yellow]Gaps:[/yellow] {', '.join(ats.keyword_gaps)}")
+    elif not errors:
+        console.print("[yellow]No ATS score produced.[/yellow]")
 
 
 if __name__ == "__main__":

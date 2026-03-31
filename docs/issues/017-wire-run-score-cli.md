@@ -10,11 +10,14 @@ This makes the system usable end-to-end from the command line. Users can run the
 
 ## Tasks
 
-- [ ] In `run` command: validate files exist, build initial state, invoke `build_graph()`, display results with Rich table (ATS score, gaps, changes, output path)
-- [ ] In `score` command: build a partial graph with only `parse_resume` and `ats_score` nodes, invoke and display score
-- [ ] Add Rich `Progress` or `Status` context for pipeline execution
-- [ ] Display errors in `[red]` if any occurred
-- [ ] Color-code ATS score: green >= 0.7, yellow >= 0.4, red < 0.4
+- [x] In `run` command: validate files exist, build initial state, invoke `build_graph()`, display results with Rich formatting (ATS score, gaps, changes, output path)
+- [x] In `score` command: added `build_score_graph()` in `graph.py` with only `parse_resume` and `ats_score` nodes, wired into CLI with file validation, Rich output, and `--verbose` flag
+- [x] Add Rich `Status` spinner context for both `run` and `score` pipeline execution
+- [x] Display errors in `[red]` if any occurred
+- [x] Color-code ATS score via `_score_color()` helper: green >= 0.7, yellow >= 0.4, red < 0.4
+- [x] Display optimization changes (`optimized_resume.changes_made`) in `run` output
+- [x] Display output PDF path in `run` output
+- [x] Add 7 new CLI tests: `TestRunCommand` (3 tests) + `TestScoreCommand` (4 tests)
 
 ## Acceptance Criteria
 
