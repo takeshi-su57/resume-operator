@@ -61,6 +61,7 @@ module = [
     "langgraph.*",
     "fitz",
     "fitz.*",
+    "reportlab.*",
 ]
 ignore_missing_imports = true
 

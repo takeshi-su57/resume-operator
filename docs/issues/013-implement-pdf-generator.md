@@ -12,22 +12,25 @@ The final deliverable is a PDF resume the user can submit. ReportLab gives full 
 
 ### Implementation
 
-- [ ] Import `reportlab` modules (`SimpleDocTemplate`, `Paragraph`, `Spacer`, styles)
-- [ ] Implement `generate_pdf(sections: dict[str, str], output_path: Path) -> Path`
-- [ ] Create a clean resume layout: name/header area, then sections in order (summary, experience, skills, education)
-- [ ] Use ReportLab paragraph styles for section headers and body text
-- [ ] Ensure `output_path` parent directory is created if it doesn't exist
-- [ ] Return the output path on success
-- [ ] Raise `ValueError` if `sections` is empty
+- [x] Import `reportlab` modules (`SimpleDocTemplate`, `Paragraph`, `Spacer`, styles)
+- [x] Implement `generate_pdf(sections: dict[str, str], output_path: Path) -> Path`
+- [x] Create a clean resume layout: name/header area, then sections in order (summary, experience, skills, education)
+- [x] Use ReportLab paragraph styles for section headers and body text
+- [x] Ensure `output_path` parent directory is created if it doesn't exist
+- [x] Return the output path on success
+- [x] Raise `ValueError` if `sections` is empty
+- [x] XML-escape section content via `xml.sax.saxutils.escape()` to handle `&`, `<`, `>` safely
+- [x] Handle multi-paragraph content (`\n\n` splits) and line breaks (`\n` → `<br/>`)
+- [x] Add `reportlab.*` to mypy overrides in `pyproject.toml`
 
 ### Tests
 
-- [ ] Create `tests/test_pdf_generator.py`
-- [ ] Test: `test_generates_pdf_from_sections` — pass sample sections, verify output file exists and is valid PDF
-- [ ] Test: `test_raises_on_empty_sections` — verify `ValueError`
-- [ ] Test: `test_creates_parent_directories` — pass nested path in `tmp_path`, verify dirs created
-- [ ] Test: `test_pdf_contains_section_text` — generate PDF, re-parse with PyMuPDF, verify text present
-- [ ] Test: `test_returns_output_path` — verify return value matches provided path
+- [x] Create `tests/test_pdf_generator.py`
+- [x] Test: `test_generates_pdf_from_sections` — pass sample sections, verify output file exists and is valid PDF (checks `%PDF` magic bytes)
+- [x] Test: `test_raises_on_empty_sections` — verify `ValueError`
+- [x] Test: `test_creates_parent_directories` — pass nested path in `tmp_path`, verify dirs created
+- [x] Test: `test_pdf_contains_section_text` — generate PDF, re-parse with PyMuPDF, verify section headers and body text present
+- [x] Test: `test_returns_output_path` — verify return value matches provided path
 
 ## Acceptance Criteria
 
