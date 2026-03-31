@@ -1,5 +1,6 @@
 """Tests for CLI commands in main.py."""
 
+import re
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -16,20 +17,30 @@ from resume_operator.state import (
 runner = CliRunner()
 
 
+def _clean_output(text: str) -> str:
+    """Remove ANSI codes and Rich panel borders for reliable assertions."""
+    # Strip ANSI escape codes
+    text = re.sub(r"\x1b\[[0-9;]*m", "", text)
+    # Strip Rich box-drawing characters
+    text = re.sub(r"[│╭╰╮╯─]", " ", text)
+    # Collapse whitespace
+    return re.sub(r"\s+", " ", text)
+
+
 class TestParseResumeCommand:
     def test_file_not_found(self) -> None:
         """Nonexistent file path prints error."""
         result = runner.invoke(app, ["parse-resume", "--resume", "nonexistent.pdf"])
 
         assert result.exit_code != 0
-        assert "does not exist" in result.output
+        assert "does not exist" in _clean_output(result.output)
 
     def test_not_a_file(self, tmp_path: Path) -> None:
         """Directory path prints error."""
         result = runner.invoke(app, ["parse-resume", "--resume", str(tmp_path)])
 
         assert result.exit_code != 0
-        assert "does not exist or is not a file" in result.output
+        assert "does not exist or is not a file" in _clean_output(result.output)
 
     def test_not_a_pdf(self, tmp_path: Path) -> None:
         """Non-PDF file is rejected."""
@@ -38,7 +49,7 @@ class TestParseResumeCommand:
         result = runner.invoke(app, ["parse-resume", "--resume", str(fake_txt)])
 
         assert result.exit_code != 0
-        assert "not a PDF" in result.output
+        assert "not a PDF" in _clean_output(result.output)
 
     @patch("resume_operator.main.build_graph")
     def test_successful_parse(self, mock_build: MagicMock, tmp_path: Path) -> None:
@@ -99,7 +110,7 @@ class TestRunCommand:
     def test_file_not_found(self) -> None:
         result = runner.invoke(app, ["run", "--resume", "nope.pdf", "--job", "nope.txt"])
         assert result.exit_code != 0
-        assert "does not exist" in result.output
+        assert "does not exist" in _clean_output(result.output)
 
     def test_resume_not_pdf(self, tmp_path: Path) -> None:
         fake_txt = tmp_path / "resume.docx"
@@ -108,7 +119,7 @@ class TestRunCommand:
         fake_job.write_text("Engineer")
         result = runner.invoke(app, ["run", "--resume", str(fake_txt), "--job", str(fake_job)])
         assert result.exit_code != 0
-        assert "not a PDF" in result.output
+        assert "not a PDF" in _clean_output(result.output)
 
     def test_dry_run(self, tmp_path: Path) -> None:
         fake_pdf = tmp_path / "resume.pdf"
@@ -135,7 +146,7 @@ class TestRunCommand:
             app, ["run", "--resume", "nope.pdf", "--job", "nope.txt", "--dry-run"]
         )
         assert result.exit_code != 0
-        assert "does not exist" in result.output
+        assert "does not exist" in _clean_output(result.output)
 
     @patch("resume_operator.main.build_graph")
     def test_successful_run(self, mock_build: MagicMock, tmp_path: Path) -> None:
@@ -198,14 +209,14 @@ class TestScoreCommand:
         fake_job.write_text("Engineer")
         result = runner.invoke(app, ["score", "--resume", "nope.pdf", "--job", str(fake_job)])
         assert result.exit_code != 0
-        assert "does not exist" in result.output
+        assert "does not exist" in _clean_output(result.output)
 
     def test_job_not_found(self, tmp_path: Path) -> None:
         fake_pdf = tmp_path / "resume.pdf"
         fake_pdf.touch()
         result = runner.invoke(app, ["score", "--resume", str(fake_pdf), "--job", "nope.txt"])
         assert result.exit_code != 0
-        assert "does not exist" in result.output
+        assert "does not exist" in _clean_output(result.output)
 
     @patch("resume_operator.main.build_score_graph")
     def test_successful_score(self, mock_build: MagicMock, tmp_path: Path) -> None:
