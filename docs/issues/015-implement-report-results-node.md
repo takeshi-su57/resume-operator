@@ -12,18 +12,24 @@ The JSON report provides a machine-readable summary of what the optimizer did. I
 
 ### Implementation
 
-- [ ] Build a report dict from state: original resume path, job description, ATS score, gap analysis, optimization changes, output path, errors, timestamp
-- [ ] Write the report to `data/results.json` using `json.dump` with indent=2
-- [ ] Ensure `data/` directory is created if missing
-- [ ] Return `{"report": report_dict}`
-- [ ] Use `datetime.now().isoformat()` for timestamp
+- [x] Build a report dict from state: resume_path, job_description_path, ATS score (`model_dump()`), gap analysis (`model_dump()`), optimization changes, output path, errors, timestamp
+- [x] Write the report to `data/results.json` using `json.dump` with indent=2
+- [x] Ensure `data/` directory is created if missing (`mkdir(parents=True, exist_ok=True)`)
+- [x] Return `{"report": report_dict}`
+- [x] Use `datetime.now().isoformat()` for timestamp
+- [x] Error handling: catch exceptions, record in `state.errors`, return early
+- [x] Logging: INFO at node start/completion (with output path), ERROR on failure
+- [x] Defined `RESULTS_PATH = Path("data/results.json")` as patchable module constant for testability
 
 ### Tests
 
-- [ ] Create `tests/test_report_results.py`
-- [ ] Test: `test_writes_json_report` — use `tmp_path`, verify JSON written and parseable
-- [ ] Test: `test_report_contains_all_fields` — verify timestamp, ats_score, gaps, etc.
-- [ ] Test: `test_creates_data_directory` — verify dir creation
+- [x] Create `tests/test_report_results.py`
+- [x] Test: `test_writes_json_report` — use `tmp_path`, verify JSON written and parseable
+- [x] Test: `test_report_contains_all_fields` — verify all 8 keys, validate timestamp is ISO format, check ats_score.score matches fixture
+- [x] Test: `test_creates_data_directory` — verify nested dir creation
+- [x] Test: `test_handles_write_error` — mock PermissionError, verify error recorded, no report returned
+- [x] Test: `test_preserves_existing_errors` — pre-existing errors kept when new error occurs
+- [x] Test: `test_returns_only_changed_fields` — result keys subset of {report, errors}
 
 ## Acceptance Criteria
 
