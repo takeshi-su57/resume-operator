@@ -1,0 +1,9 @@
+services:
+  resume-operator:
+    build: .
+    env_file: .env
+    volumes:
+      - ./input:/app/input
+      - ./data:/app/data
+    entrypoint: ["uv", "run", "resume-operator"]
+    command: ["run", "--resume", "/app/input/resume.pdf", "--job", "/app/input/job.txt", "--output", "/app/data/optimized_resume.pdf"]

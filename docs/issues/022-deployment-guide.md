@@ -10,15 +10,15 @@ Users need clear instructions to deploy the tool beyond their local dev machine.
 
 ## Tasks
 
-- [ ] Create `docs/deployment.md`
-- [ ] Section: Local usage (pip install, .env setup, CLI commands)
-- [ ] Section: Docker (write a `Dockerfile`, document build/run commands, env var passthrough)
-- [ ] Section: Docker Compose (with `.env` file mounting)
-- [ ] Section: Environment variables reference (link to README table)
-- [ ] Section: Security considerations (API key management, never bake keys into images)
-- [ ] Section: Troubleshooting (common errors: missing API key, PDF not readable, model not found)
-- [ ] Create `Dockerfile` at repo root (Python 3.12-slim, pip install, entrypoint)
-- [ ] Create `docker-compose.yml` at repo root
+- [x] Create `docs/deployment.md` with 6 sections
+- [x] Section: Local usage (uv install, .env setup, all CLI commands including --dry-run and --verbose)
+- [x] Section: Docker (Dockerfile with Python 3.12-slim + uv, layer-cached deps, build/run commands, env var passthrough via `-e`)
+- [x] Section: Docker Compose (env_file + volume mounts for input/output, override examples)
+- [x] Section: Environment variables reference (full table with 7 vars, link to .env.example)
+- [x] Section: Security considerations (4 points: no baked keys, no committed .env, PII handling, log level in prod)
+- [x] Section: Troubleshooting (5 common errors: missing API key, file not found, not PDF, bad provider, no text in PDF)
+- [x] Create `Dockerfile` at repo root (Python 3.12-slim, uv for deps, layer caching, CLI entrypoint)
+- [x] Create `docker-compose.yml` at repo root (env_file, input/data volume mounts)
 
 ## Acceptance Criteria
 
