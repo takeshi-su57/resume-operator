@@ -10,12 +10,13 @@ In practice, LLMs often wrap JSON in ```json ... ``` blocks or add explanatory t
 
 ## Tasks
 
-- [ ] Create `src/resume_operator/tools/json_parser.py` with `extract_json(text: str) -> dict`
-- [ ] Handle: raw JSON, JSON wrapped in ```json ... ```, JSON with leading/trailing text
-- [ ] Use regex to find the first `{...}` block if `json.loads` fails on full text
-- [ ] Raise `ValueError` with descriptive message if no valid JSON found
-- [ ] Update all four LLM-calling nodes to use `extract_json()` instead of raw `json.loads()`
-- [ ] Create `tests/test_json_parser.py` covering all parsing scenarios
+- [x] Create `src/resume_operator/tools/json_parser.py` with `extract_json(text: str) -> dict[str, Any]`
+- [x] Handle: raw JSON (direct `json.loads`), JSON wrapped in ````json ... ```` (regex for code fences), JSON with leading/trailing text (depth-counting brace matcher for first `{...}` block)
+- [x] Use brace-depth matching to find the first balanced `{...}` block if `json.loads` and code-fence extraction both fail
+- [x] Raise `ValueError` with descriptive message if no valid JSON object found (rejects arrays too)
+- [x] Update all 4 LLM-calling nodes (`parse_resume`, `ats_score`, `analyze_gaps`, `optimize_content`) to use `extract_json()` instead of `json.loads()`, catch `ValueError` instead of `json.JSONDecodeError`, remove `import json`
+- [x] Create `tests/test_json_parser.py` with 11 tests covering: raw JSON, whitespace, code-fenced (with/without language), text-wrapped, text before code fence, nested objects, braces in strings, invalid text, empty string, array rejection
+- [x] Update `tests/test_graph.py` to mock all LLM-calling nodes properly (required because `extract_json` is more robust than `json.loads` and extracts JSON from mock responses that previously failed silently)
 
 ## Acceptance Criteria
 
