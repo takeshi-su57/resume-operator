@@ -16,14 +16,15 @@ Individual node tests verify each piece works in isolation. This integration tes
 
 ## Tasks
 
-- [ ] Create `tests/test_integration.py`
-- [ ] Mock `get_llm` to return pre-canned JSON responses for each node's expected prompt
-- [ ] Mock `pdf_parser.extract_text` to return sample resume text
-- [ ] Mock `pdf_generator.generate_pdf` to return a path without creating a file
-- [ ] Invoke the compiled graph with initial state (resume_path, job_description_path, output_path)
-- [ ] Verify final state has: populated `resume`, `ats_score`, `gap_analysis`, `optimized_resume`, `output_path`, `report`
-- [ ] Verify `errors` list is empty (happy path)
-- [ ] Test: `test_pipeline_continues_on_node_error` — make one node fail, verify pipeline completes with errors recorded
+- [x] Create `tests/test_integration.py`
+- [x] Mock `get_llm` at each node's import site (4 separate patches) with pre-canned JSON responses
+- [x] Mock `pdf_parser.extract_text` to return sample resume text
+- [x] Mock `pdf_generator.generate_pdf` to return a mock Path without creating a file
+- [x] Mock `report_results.RESULTS_PATH` to redirect JSON output to `tmp_path`
+- [x] Invoke the compiled graph with initial state (resume_path, job_description_text, output_path)
+- [x] Verify final state has: populated `resume`, `ats_score`, `gap_analysis`, `optimized_resume`, `output_path`, `report`
+- [x] Verify `errors` list is empty (happy path)
+- [x] Test: `test_pipeline_continues_on_node_error` — ats_score's `get_llm` raises RuntimeError, pipeline completes with errors recorded, downstream nodes still populate their fields
 
 ## Acceptance Criteria
 
