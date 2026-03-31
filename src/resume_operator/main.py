@@ -5,6 +5,7 @@ from pathlib import Path
 
 import typer
 from rich.console import Console
+from rich.panel import Panel
 from rich.status import Status
 
 from resume_operator.config import get_settings
@@ -32,6 +33,20 @@ def _setup_logging(verbose: bool) -> None:
     )
 
 
+def _validate_resume(resume: Path) -> None:
+    """Validate resume file exists and is a PDF."""
+    if not resume.exists() or not resume.is_file():
+        raise typer.BadParameter(f"'{resume}' does not exist or is not a file.")
+    if resume.suffix.lower() != ".pdf":
+        raise typer.BadParameter(f"'{resume}' is not a PDF file (expected .pdf extension).")
+
+
+def _validate_job(job: Path) -> None:
+    """Validate job description file exists and is readable."""
+    if not job.exists() or not job.is_file():
+        raise typer.BadParameter(f"'{job}' does not exist or is not a file.")
+
+
 def _score_color(score: float) -> str:
     """Return Rich color tag based on ATS score value."""
     if score >= 0.7:
@@ -49,17 +64,24 @@ def run(
         Path("data/optimized_resume.pdf"), "--output", "-o", help="Output PDF path"
     ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate inputs without executing"),
 ) -> None:
     """Run the full resume optimization pipeline."""
     _setup_logging(verbose)
+    _validate_resume(resume)
+    _validate_job(job)
 
-    if not resume.exists() or not resume.is_file():
-        console.print(f"[red]Error: '{resume}' does not exist or is not a file.[/red]")
-        raise typer.Exit(code=1)
-
-    if not job.exists() or not job.is_file():
-        console.print(f"[red]Error: '{job}' does not exist or is not a file.[/red]")
-        raise typer.Exit(code=1)
+    if dry_run:
+        console.print(
+            Panel(
+                f"[bold]Resume:[/bold] {resume}\n"
+                f"[bold]Job description:[/bold] {job}\n"
+                f"[bold]Output:[/bold] {output}",
+                title="Dry run — inputs validated",
+                border_style="green",
+            )
+        )
+        return
 
     graph = build_graph()
     with Status("[bold cyan]Running optimization pipeline...", console=console):
@@ -73,9 +95,8 @@ def run(
 
     errors: list[str] = result.get("errors", [])
     if errors:
-        console.print("\n[bold red]Errors:[/bold red]")
-        for error in errors:
-            console.print(f"  [red]• {error}[/red]")
+        error_text = "\n".join(f"• {e}" for e in errors)
+        console.print(Panel(error_text, title="Errors", border_style="red"))
 
     # Display resume data
     resume_data: ResumeData = result.get("resume", ResumeData())
@@ -136,10 +157,7 @@ def parse_resume(
 ) -> None:
     """Parse a resume PDF and display extracted data."""
     _setup_logging(verbose)
-
-    if not resume.exists() or not resume.is_file():
-        console.print(f"[red]Error: '{resume}' does not exist or is not a file.[/red]")
-        raise typer.Exit(code=1)
+    _validate_resume(resume)
 
     graph = build_graph()
     with Status("[bold cyan]Parsing resume...", console=console):
@@ -171,14 +189,8 @@ def score(
 ) -> None:
     """Score resume ATS compatibility against a job description."""
     _setup_logging(verbose)
-
-    if not resume.exists() or not resume.is_file():
-        console.print(f"[red]Error: '{resume}' does not exist or is not a file.[/red]")
-        raise typer.Exit(code=1)
-
-    if not job.exists() or not job.is_file():
-        console.print(f"[red]Error: '{job}' does not exist or is not a file.[/red]")
-        raise typer.Exit(code=1)
+    _validate_resume(resume)
+    _validate_job(job)
 
     graph = build_score_graph()
     with Status("[bold cyan]Scoring resume...", console=console):

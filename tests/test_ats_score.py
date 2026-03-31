@@ -123,3 +123,12 @@ class TestAtsScore:
         assert set(result.keys()).issubset(allowed_keys)
         assert "resume" not in result
         assert "resume_path" not in result
+
+    def test_empty_resume_data(self, sample_state: ResumeOptimizerState) -> None:
+        """Skips scoring when resume data is empty."""
+        sample_state.resume.raw_text = ""
+        result = ats_score(sample_state)
+
+        assert "errors" in result
+        assert any("resume data is empty" in e for e in result["errors"])
+        assert "ats_score" not in result

@@ -18,18 +18,27 @@ runner = CliRunner()
 
 class TestParseResumeCommand:
     def test_file_not_found(self) -> None:
-        """Nonexistent file path prints error and exits 1."""
+        """Nonexistent file path prints error."""
         result = runner.invoke(app, ["parse-resume", "--resume", "nonexistent.pdf"])
 
-        assert result.exit_code == 1
+        assert result.exit_code != 0
         assert "does not exist" in result.output
 
     def test_not_a_file(self, tmp_path: Path) -> None:
-        """Directory path prints error and exits 1."""
+        """Directory path prints error."""
         result = runner.invoke(app, ["parse-resume", "--resume", str(tmp_path)])
 
-        assert result.exit_code == 1
+        assert result.exit_code != 0
         assert "does not exist or is not a file" in result.output
+
+    def test_not_a_pdf(self, tmp_path: Path) -> None:
+        """Non-PDF file is rejected."""
+        fake_txt = tmp_path / "resume.txt"
+        fake_txt.write_text("not a pdf")
+        result = runner.invoke(app, ["parse-resume", "--resume", str(fake_txt)])
+
+        assert result.exit_code != 0
+        assert "not a PDF" in result.output
 
     @patch("resume_operator.main.build_graph")
     def test_successful_parse(self, mock_build: MagicMock, tmp_path: Path) -> None:
@@ -89,7 +98,43 @@ class TestParseResumeCommand:
 class TestRunCommand:
     def test_file_not_found(self) -> None:
         result = runner.invoke(app, ["run", "--resume", "nope.pdf", "--job", "nope.txt"])
-        assert result.exit_code == 1
+        assert result.exit_code != 0
+        assert "does not exist" in result.output
+
+    def test_resume_not_pdf(self, tmp_path: Path) -> None:
+        fake_txt = tmp_path / "resume.docx"
+        fake_txt.touch()
+        fake_job = tmp_path / "job.txt"
+        fake_job.write_text("Engineer")
+        result = runner.invoke(app, ["run", "--resume", str(fake_txt), "--job", str(fake_job)])
+        assert result.exit_code != 0
+        assert "not a PDF" in result.output
+
+    def test_dry_run(self, tmp_path: Path) -> None:
+        fake_pdf = tmp_path / "resume.pdf"
+        fake_pdf.touch()
+        fake_job = tmp_path / "job.txt"
+        fake_job.write_text("Engineer")
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "--resume",
+                str(fake_pdf),
+                "--job",
+                str(fake_job),
+                "--dry-run",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "Dry run" in result.output
+        assert "resume.pdf" in result.output
+
+    def test_dry_run_invalid_file(self) -> None:
+        result = runner.invoke(
+            app, ["run", "--resume", "nope.pdf", "--job", "nope.txt", "--dry-run"]
+        )
+        assert result.exit_code != 0
         assert "does not exist" in result.output
 
     @patch("resume_operator.main.build_graph")
@@ -152,14 +197,14 @@ class TestScoreCommand:
         fake_job = tmp_path / "job.txt"
         fake_job.write_text("Engineer")
         result = runner.invoke(app, ["score", "--resume", "nope.pdf", "--job", str(fake_job)])
-        assert result.exit_code == 1
+        assert result.exit_code != 0
         assert "does not exist" in result.output
 
     def test_job_not_found(self, tmp_path: Path) -> None:
         fake_pdf = tmp_path / "resume.pdf"
         fake_pdf.touch()
         result = runner.invoke(app, ["score", "--resume", str(fake_pdf), "--job", "nope.txt"])
-        assert result.exit_code == 1
+        assert result.exit_code != 0
         assert "does not exist" in result.output
 
     @patch("resume_operator.main.build_score_graph")

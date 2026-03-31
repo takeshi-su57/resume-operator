@@ -171,3 +171,11 @@ class TestParseResume:
         assert result["resume"].experience == []
         assert result["resume"].certifications == []
         assert result["resume"].skills == ["Python"]
+
+    def test_empty_resume_path(self) -> None:
+        """Empty resume_path returns error without processing."""
+        state = ResumeOptimizerState(resume_path="")
+        result = parse_resume(state)
+
+        assert "errors" in result
+        assert any("resume_path is empty" in e for e in result["errors"])

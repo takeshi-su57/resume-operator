@@ -20,6 +20,11 @@ def ats_score(state: ResumeOptimizerState) -> dict[str, Any]:
     logger.info("ats_score: starting")
     errors: list[str] = list(state.errors)
 
+    if not state.resume.raw_text:
+        logger.warning("ats_score: skipping — resume data is empty (parse_resume may have failed)")
+        errors.append("ats_score: skipping — resume data is empty")
+        return {"errors": errors}
+
     # --- Call LLM with ATS scoring prompt ---
     try:
         llm = get_llm()
