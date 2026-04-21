@@ -4,13 +4,15 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from resume_operator.nodes.generate_pdf import generate_pdf
-from resume_operator.state import OptimizedResume, ResumeOptimizerState
+from resume_operator.state import ResumeOptimizerState, TailoredItem, TailoredResume
 
-SAMPLE_SECTIONS = {
-    "summary": "Senior engineer with 8 years of Python experience.",
-    "experience": "Led backend team building microservices.",
-    "skills": "Python, AWS, Docker, Kubernetes",
-}
+
+def _tailored() -> TailoredResume:
+    return TailoredResume(
+        items=[
+            TailoredItem(source_id="master:exp-1-b1", action="keep", original_text="Did stuff"),
+        ]
+    )
 
 
 def _mock_path(path_str: str, size: int = 12345) -> MagicMock:
@@ -26,13 +28,19 @@ class TestGeneratePdf:
     def test_calls_generator_and_returns_output_path(
         self, mock_create_pdf: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
-        sample_state.optimized_resume = OptimizedResume(sections=SAMPLE_SECTIONS)
+        sample_state.tailored_resume = _tailored()
         sample_state.output_path = "output/resume.pdf"
         mock_create_pdf.return_value = _mock_path("output/resume.pdf")
 
         result = generate_pdf(sample_state)
 
-        mock_create_pdf.assert_called_once_with(SAMPLE_SECTIONS, Path("output/resume.pdf"))
+        # New signature: master + tailored + output_path + template
+        mock_create_pdf.assert_called_once()
+        call_kwargs = mock_create_pdf.call_args.kwargs
+        assert call_kwargs["master"] is sample_state.master
+        assert call_kwargs["tailored"] is sample_state.tailored_resume
+        assert call_kwargs["output_path"] == Path("output/resume.pdf")
+        assert "template" in call_kwargs
         assert result["output_path"] == "output/resume.pdf"
         assert "errors" not in result
 
@@ -40,9 +48,9 @@ class TestGeneratePdf:
     def test_records_error_when_generator_fails(
         self, mock_create_pdf: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
-        sample_state.optimized_resume = OptimizedResume(sections=SAMPLE_SECTIONS)
+        sample_state.tailored_resume = _tailored()
         sample_state.output_path = "output/resume.pdf"
-        mock_create_pdf.side_effect = ValueError("sections must not be empty")
+        mock_create_pdf.side_effect = ValueError("no renderable items")
 
         result = generate_pdf(sample_state)
 
@@ -54,20 +62,21 @@ class TestGeneratePdf:
     def test_uses_default_path_when_output_path_empty(
         self, mock_create_pdf: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
-        sample_state.optimized_resume = OptimizedResume(sections=SAMPLE_SECTIONS)
+        sample_state.tailored_resume = _tailored()
         sample_state.output_path = ""
         mock_create_pdf.return_value = _mock_path("data/optimized_resume.pdf")
 
         result = generate_pdf(sample_state)
 
-        mock_create_pdf.assert_called_once_with(SAMPLE_SECTIONS, Path("data/optimized_resume.pdf"))
+        call_kwargs = mock_create_pdf.call_args.kwargs
+        assert call_kwargs["output_path"] == Path("data/optimized_resume.pdf")
         assert result["output_path"] == "data/optimized_resume.pdf"
 
     @patch("resume_operator.nodes.generate_pdf.create_pdf")
     def test_returns_only_changed_fields(
         self, mock_create_pdf: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
-        sample_state.optimized_resume = OptimizedResume(sections=SAMPLE_SECTIONS)
+        sample_state.tailored_resume = _tailored()
         sample_state.output_path = "out.pdf"
         mock_create_pdf.return_value = _mock_path("out.pdf")
 
@@ -75,14 +84,12 @@ class TestGeneratePdf:
 
         allowed_keys = {"output_path", "errors"}
         assert set(result.keys()).issubset(allowed_keys)
-        assert "optimized_resume" not in result
-        assert "resume" not in result
 
     @patch("resume_operator.nodes.generate_pdf.create_pdf")
     def test_preserves_existing_errors(
         self, mock_create_pdf: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
-        sample_state.optimized_resume = OptimizedResume(sections=SAMPLE_SECTIONS)
+        sample_state.tailored_resume = _tailored()
         sample_state.output_path = "out.pdf"
         sample_state.errors = ["previous error"]
         mock_create_pdf.side_effect = RuntimeError("disk full")
@@ -97,7 +104,7 @@ class TestGeneratePdf:
     def test_no_errors_key_on_success(
         self, mock_create_pdf: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
-        sample_state.optimized_resume = OptimizedResume(sections=SAMPLE_SECTIONS)
+        sample_state.tailored_resume = _tailored()
         sample_state.output_path = "out.pdf"
         sample_state.errors = ["pre-existing error"]
         mock_create_pdf.return_value = _mock_path("out.pdf")
@@ -106,12 +113,10 @@ class TestGeneratePdf:
 
         assert "errors" not in result
 
-    def test_empty_sections_skips(self, sample_state: ResumeOptimizerState) -> None:
-        """Skips PDF generation when optimized sections are empty."""
-        sample_state.optimized_resume = OptimizedResume(sections={})
-
+    def test_empty_tailored_resume_skips(self, sample_state: ResumeOptimizerState) -> None:
+        sample_state.tailored_resume = TailoredResume(items=[])
         result = generate_pdf(sample_state)
 
         assert "errors" in result
-        assert any("no optimized sections" in e for e in result["errors"])
+        assert any("no tailored items" in e for e in result["errors"])
         assert "output_path" not in result

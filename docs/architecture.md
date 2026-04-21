@@ -88,7 +88,9 @@ After `ats_score`, a routing function checks the score against `ATS_SKIP_THRESHO
 
 `report_results` writes `data/diff.md` — a human-readable before/after of every keep/reword/drop decision, grouped into Additions (pulled from facts bank), Rewordings (with before/after text), and Deletions.
 
-`generate_pdf` currently reads the legacy `OptimizedResume.sections` blob projection of the tailored output (the projection lives in `optimize_content` for back-compat). Direct structured rendering is #027.
+`generate_pdf` is a pure function of `(ResumeMaster, TailoredResume, FactsBank?, template)` (#027). The renderer groups tailored items by `kind` (summary, experience-bullet, project, education, skill, certification), splices facts-bank `extra-bullet[role-id]` items under their target role, and lays out the page deterministically — no paragraph-splitting on LLM whitespace.
+
+Templates are configured via `RESUME_TEMPLATE` (`default | compact | modern`); only `default` is implemented today, unknown values fall back to default with a warning.
 
 ## LLM Output Handling
 
