@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     log_level: str = "INFO"
     ats_skip_threshold: float = 0.9
+    resume_template: str = "default"  # default | compact | modern — stub for future templates
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
