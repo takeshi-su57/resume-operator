@@ -83,8 +83,11 @@ cp .env.example .env
 uv run python -m resume_operator bootstrap --resume my-resume.pdf --output data/master_resume.yaml
 # Review and hand-edit data/master_resume.yaml
 
+# (Optional) Maintain a facts bank alongside the master for items that didn't fit on the trimmed resume
+# see input/facts_bank.example.yaml
+
 # Run the optimizer (preferred: master YAML)
-uv run python -m resume_operator run --master data/master_resume.yaml --job job_description.txt
+uv run python -m resume_operator run --master data/master_resume.yaml --facts data/facts_bank.yaml --job job_description.txt
 ```
 
 ## Commands

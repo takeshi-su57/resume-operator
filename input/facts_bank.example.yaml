@@ -1,0 +1,38 @@
+# Items that didn't fit on the trimmed master resume.
+# The optimizer may pull these in when they strengthen the match for a JD.
+# Everything below is optional — an empty file or missing file is valid.
+
+projects:
+  - id: proj-1
+    text: >
+      Built internal metrics pipeline (Airflow + Redshift) that reduced the
+      weekly exec dashboard refresh from 3h to 12m.
+  - id: proj-2
+    text: >
+      Led migration of 20+ Lambda functions from Node.js 14 → 18, reducing
+      cold-start latency 35% and closing 4 security advisories.
+
+extra_bullets:
+  # `role_id` links back to an ExperienceEntry.id on the master resume —
+  # use this when a bullet belongs logically under a specific role.
+  - id: extra-1
+    role_id: exp-1
+    text: >
+      Drove adoption of GitHub Actions across the org; replaced a brittle
+      Jenkins setup and cut CI flake rate from 8% to under 1%.
+  - id: extra-2
+    role_id: exp-2
+    text: >
+      Ran a monthly platform-wide bug bash program, resolving a backlog of
+      130+ open issues over 18 months.
+
+skills_beyond_master:
+  - Docker
+  - AWS Lambda
+  - AWS SQS
+  - AWS RDS
+  - Terraform
+  - Airflow
+
+certifications_beyond_master:
+  - Kubernetes CKAD (in progress)

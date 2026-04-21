@@ -49,6 +49,17 @@ def _validate_master(master: Path) -> None:
         raise typer.BadParameter(f"'{master}' is not a YAML file (expected .yaml or .yml).")
 
 
+def _validate_facts(facts: Path) -> None:
+    """Validate facts bank YAML if provided (optional file)."""
+    if not facts.exists() or not facts.is_file():
+        raise typer.BadParameter(f"'{facts}' does not exist or is not a file.")
+    if facts.suffix.lower() not in {".yaml", ".yml"}:
+        raise typer.BadParameter(f"'{facts}' is not a YAML file (expected .yaml or .yml).")
+
+
+DEFAULT_FACTS_PATH = Path("data/facts_bank.yaml")
+
+
 def _validate_job(job: Path) -> None:
     """Validate job description file exists and is readable."""
     if not job.exists() or not job.is_file():
@@ -72,6 +83,12 @@ def run(
     resume: Path = typer.Option(
         None, "--resume", "-r", help="Path to resume PDF (legacy — use --master instead)"
     ),
+    facts: Path = typer.Option(
+        None,
+        "--facts",
+        "-f",
+        help=f"Path to facts_bank.yaml (optional; defaults to {DEFAULT_FACTS_PATH} if it exists)",
+    ),
     job: Path = typer.Option(..., "--job", "-j", help="Path to job description text file"),
     output: Path = typer.Option(
         Path("data/optimized_resume.pdf"), "--output", "-o", help="Output PDF path"
@@ -92,13 +109,23 @@ def run(
         _validate_resume(resume)
     _validate_job(job)
 
+    # Facts bank is optional: explicit --facts is validated; fall back to the
+    # default path only if it actually exists on disk.
+    resolved_facts: Path | None = None
+    if facts is not None:
+        _validate_facts(facts)
+        resolved_facts = facts
+    elif DEFAULT_FACTS_PATH.exists():
+        resolved_facts = DEFAULT_FACTS_PATH
+
     if dry_run:
         source_line = (
             f"[bold]Master:[/bold] {master}" if master else f"[bold]Resume:[/bold] {resume}"
         )
+        facts_line = f"\n[bold]Facts:[/bold] {resolved_facts}" if resolved_facts else ""
         console.print(
             Panel(
-                f"{source_line}\n"
+                f"{source_line}{facts_line}\n"
                 f"[bold]Job description:[/bold] {job}\n"
                 f"[bold]Output:[/bold] {output}",
                 title="Dry run — inputs validated",
@@ -115,6 +142,8 @@ def run(
         initial["master_path"] = str(master)
     else:
         initial["resume_path"] = str(resume)
+    if resolved_facts is not None:
+        initial["facts_path"] = str(resolved_facts)
 
     graph = build_graph()
     with Status("[bold cyan]Running optimization pipeline...", console=console):
