@@ -92,6 +92,8 @@ After `ats_score`, a routing function checks the score against `ATS_SKIP_THRESHO
 
 Templates are configured via `RESUME_TEMPLATE` (`default | compact | modern`); only `default` is implemented today, unknown values fall back to default with a warning.
 
+The `default` template targets both audiences: ATS parsers (single-column selectable text, standard fonts, no images or layout tables) and recruiters' six-second scan (name banner + thin accent rule, uppercase section labels with a pale rule underneath, role header with right-aligned dates on the same line, hanging-indent bullets, one muted deep-blue accent used sparingly).
+
 ## LLM Output Handling
 
 All LLM-calling nodes use LangChain's `with_structured_output` (via `tools/llm_provider.get_structured_llm`). Each node defines an `…LLMOutput` Pydantic schema near its node function; LangChain hands the schema to the provider via native function/tool-calling and returns an already-validated instance. No manual JSON parsing or prompt-time "return ONLY valid JSON" boilerplate.
