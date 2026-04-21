@@ -65,3 +65,28 @@ class TestLoadMasterNode:
         result = load_master_node(state)
         assert result["errors"]
         assert any("not found" in e for e in result["errors"])
+
+    def test_loads_optional_facts_bank(self, tmp_path: Path) -> None:
+        master_path = _write_master(tmp_path / "master.yaml")
+        facts_path = tmp_path / "facts.yaml"
+        facts_path.write_text(
+            "projects:\n  - id: proj-1\n    text: Built X\n",
+            encoding="utf-8",
+        )
+        state = ResumeOptimizerState(master_path=str(master_path), facts_path=str(facts_path))
+        result = load_master_node(state)
+
+        assert "facts" in result
+        assert len(result["facts"].projects) == 1
+        assert result["facts"].projects[0].id == "proj-1"
+
+    def test_missing_facts_bank_is_not_an_error(self, tmp_path: Path) -> None:
+        master_path = _write_master(tmp_path / "master.yaml")
+        state = ResumeOptimizerState(
+            master_path=str(master_path), facts_path=str(tmp_path / "no-facts.yaml")
+        )
+        result = load_master_node(state)
+
+        assert not result.get("errors"), result.get("errors")
+        assert "facts" in result
+        assert result["facts"].projects == []

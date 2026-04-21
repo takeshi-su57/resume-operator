@@ -25,6 +25,7 @@ def optimize_content(state: ResumeOptimizerState) -> dict[str, Any]:
         llm = get_llm()
         prompt = OPTIMIZE_CONTENT.format(
             resume_json=state.resume.model_dump_json(),
+            facts_json=state.facts.model_dump_json(),
             job_description=state.job_description.raw_text,
             gap_analysis=state.gap_analysis.model_dump_json(),
         )

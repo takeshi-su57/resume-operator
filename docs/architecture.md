@@ -46,8 +46,11 @@ load_master            parse_resume
 |----------|----------|------|-------|
 | **Master YAML (preferred)** | `--master` | `load_master` | No LLM. Hand-maintained source of truth. |
 | **Resume PDF (legacy)** | `--resume` | `parse_resume` | LLM-parsed. Kept for back-compat and `bootstrap`. |
+| **Facts bank (optional)** | `--facts` | `load_master` | YAML pool of items beyond the master. `optimize_content` may pull from here. |
 
 Use `resume-operator bootstrap --resume old.pdf --output data/master_resume.yaml` once to seed the YAML from an existing PDF, then maintain the YAML by hand.
+
+If a `--facts <yaml>` path is provided (or `data/facts_bank.yaml` exists), the facts bank is loaded alongside the master and handed to `optimize_content` as a distinct pool the LLM may pull from when a fact strengthens the match for the JD.
 
 ## Conditional Routing
 

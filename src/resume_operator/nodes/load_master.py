@@ -12,6 +12,7 @@ from resume_operator.state import (
     ResumeMaster,
     ResumeOptimizerState,
 )
+from resume_operator.tools.facts_bank import FactsBankError, load_facts
 from resume_operator.tools.master_resume import MasterResumeError, load_master
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,16 @@ def load_master_node(state: ResumeOptimizerState) -> dict[str, Any]:
 
     result["master"] = master
     result["resume"] = _master_to_resume_data(master)
+
+    # --- Optional facts bank ---
+    facts_path = Path(state.facts_path) if state.facts_path else None
+    try:
+        facts = load_facts(facts_path)
+    except FactsBankError as exc:
+        logger.error("load_master: %s", exc)
+        errors.append(f"load_master: {exc}")
+        return {"errors": errors}
+    result["facts"] = facts
 
     # Read job description (same contract as the legacy parse_resume node).
     job_raw_text = state.job_description_text

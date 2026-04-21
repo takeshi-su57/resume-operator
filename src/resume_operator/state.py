@@ -69,6 +69,28 @@ class ResumeMaster(BaseModel):
     certifications: list[str] = Field(default_factory=list)
 
 
+class FactItem(BaseModel):
+    """A project, achievement, or other bullet that didn't fit on the trimmed master."""
+
+    id: str
+    text: str
+    role_id: str = ""  # optional: links to an `ExperienceEntry.id` for spliceable bullets
+
+
+class FactsBank(BaseModel):
+    """Optional pool of items beyond the master resume.
+
+    During tailoring (#026), the optimizer may pull items from here into the
+    output when they are a strong match for the JD. Everything is optional —
+    missing file or empty bank is a valid state.
+    """
+
+    projects: list[FactItem] = Field(default_factory=list)
+    extra_bullets: list[FactItem] = Field(default_factory=list)
+    skills_beyond_master: list[str] = Field(default_factory=list)
+    certifications_beyond_master: list[str] = Field(default_factory=list)
+
+
 class JobDescription(BaseModel):
     """Structured job description data."""
 
@@ -110,12 +132,14 @@ class ResumeOptimizerState(BaseModel):
     # Inputs
     resume_path: str = ""
     master_path: str = ""
+    facts_path: str = ""
     job_description_path: str = ""
     job_description_text: str = ""
 
     # Parsed data
     resume: ResumeData = Field(default_factory=ResumeData)
     master: ResumeMaster = Field(default_factory=ResumeMaster)
+    facts: FactsBank = Field(default_factory=FactsBank)
     job_description: JobDescription = Field(default_factory=JobDescription)
 
     # Analysis
