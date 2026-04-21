@@ -263,14 +263,20 @@ def bootstrap(
     This is the only command that calls the LLM to ingest a resume. From then on,
     `run --master` uses the YAML directly.
     """
+    from resume_operator.nodes.parse_resume import parse_resume as parse_resume_node
+    from resume_operator.state import ResumeOptimizerState
     from resume_operator.tools.master_resume import resume_data_to_master, save_master
 
     _setup_logging(verbose)
     _validate_resume(resume)
 
-    graph = build_graph()
+    # Bootstrap only needs the parse_resume node — not the full graph. Invoking the
+    # graph here used to fire ats_score + analyze_gaps + optimize_content +
+    # generate_pdf + report_results as well, which wasted three extra LLM calls
+    # plus a PDF render on every bootstrap (issue #60).
     with Status("[bold cyan]Bootstrapping master resume from PDF...", console=console):
-        result = graph.invoke({"resume_path": str(resume)})
+        state = ResumeOptimizerState(resume_path=str(resume))
+        result = parse_resume_node(state)
 
     errors: list[str] = result.get("errors", [])
     if errors:
