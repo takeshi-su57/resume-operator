@@ -2,7 +2,7 @@
 
 **Project name:** resume-operator
 
-Resume Optimizer AI Agent. User provides a resume PDF and a job description (text) — the agent parses the resume, scores ATS compatibility, analyzes gaps, optimizes content, and generates a tailored PDF.
+Resume Optimizer AI Agent. User provides a hand-maintained `master_resume.yaml` (bootstrapped once from a PDF) and a job description (text) — the agent scores ATS compatibility, analyzes gaps, optimizes content, and generates a tailored PDF. The legacy PDF-input path (`--resume`) is kept for back-compat.
 
 ## Tech Stack
 
@@ -30,13 +30,15 @@ src/resume_operator/         → Main Python package
   state.py                   → ResumeOptimizerState model (central data contract)
   graph.py                   → LangGraph StateGraph assembly
   nodes/                     → Graph node functions (one per file)
-    parse_resume.py          → Extract + structure resume data from PDF
+    load_master.py           → Read master_resume.yaml into state (no LLM)
+    parse_resume.py          → Legacy: PDF → ResumeData via LLM
     ats_score.py             → Score resume ATS compatibility vs job description
     analyze_gaps.py          → Identify gaps, strengths, improvement suggestions
     optimize_content.py      → LLM-based resume content optimization
     generate_pdf.py          → Render optimized resume to PDF via ReportLab
     report_results.py        → Save results to JSON
   tools/                     → Utility modules (I/O, external services)
+    master_resume.py         → YAML load/save + ResumeData→ResumeMaster conversion
     pdf_parser.py            → PyMuPDF text extraction
     pdf_generator.py         → ReportLab PDF creation
     llm_provider.py          → LangChain model factory
@@ -50,7 +52,7 @@ docs/                        → Architecture docs + ADRs
 
 **LangGraph StateGraph** — The agent is a compiled StateGraph. `ResumeOptimizerState` (Pydantic model in `state.py`) flows through nodes. Each node is a function: `(state) -> dict` returning only the fields to update. LangGraph merges updates. See `.claude/rules/architecture.md`.
 
-**Agent flow** — `parse_resume → ats_score → analyze_gaps → optimize_content → generate_pdf → report_results`
+**Agent flow** — `(load_master | parse_resume) → ats_score → [conditional: skip if score ≥ threshold] → analyze_gaps → optimize_content → generate_pdf → report_results`. Entry node is chosen by a conditional edge on `state.master_path`.
 
 **Node design** — One public function per file in `nodes/`. Pure logic: receive state, call tools, return state delta. No global mutable state. Errors recorded in `state.errors`, pipeline continues.
 
@@ -62,15 +64,16 @@ docs/                        → Architecture docs + ADRs
 
 **Storage** — Local JSON files in `data/`. Results written after each run. No database.
 
-**CLI** — Typer app in `main.py` with Rich for progress display. Commands: `run`, `parse-resume`, `score`.
+**CLI** — Typer app in `main.py` with Rich for progress display. Commands: `run`, `bootstrap`, `parse-resume`, `score`. `run` and `score` accept `--master` (preferred) or `--resume` (legacy).
 
 ## Key Commands
 
 ```bash
 uv sync --dev              # Install with dev dependencies
-uv run python -m resume_operator run --resume resume.pdf --job job.txt     # Full pipeline
-uv run python -m resume_operator parse-resume --resume resume.pdf          # Parse only
-uv run python -m resume_operator score --resume resume.pdf --job job.txt   # ATS score only
+uv run python -m resume_operator bootstrap --resume old.pdf --output data/master_resume.yaml  # One-time
+uv run python -m resume_operator run --master data/master_resume.yaml --job job.txt           # Full pipeline
+uv run python -m resume_operator parse-resume --resume resume.pdf                              # Parse PDF (legacy)
+uv run python -m resume_operator score --master data/master_resume.yaml --job job.txt          # ATS score only
 uv run pytest              # Run tests
 uv run ruff check src/ tests/     # Lint
 uv run ruff format src/ tests/    # Format

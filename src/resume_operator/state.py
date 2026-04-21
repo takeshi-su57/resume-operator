@@ -19,6 +19,56 @@ class ResumeData(BaseModel):
     raw_text: str = ""
 
 
+class ExperienceBullet(BaseModel):
+    """A single bullet on an experience entry with a stable ID."""
+
+    id: str
+    text: str
+
+
+class ExperienceEntry(BaseModel):
+    """One role on the master resume."""
+
+    id: str
+    role: str = ""
+    company: str = ""
+    location: str = ""
+    start_date: str = ""
+    end_date: str = ""
+    bullets: list[ExperienceBullet] = Field(default_factory=list)
+
+
+class EducationEntry(BaseModel):
+    """One education entry on the master resume."""
+
+    id: str
+    degree: str = ""
+    school: str = ""
+    location: str = ""
+    start_date: str = ""
+    end_date: str = ""
+    details: str = ""
+
+
+class ResumeMaster(BaseModel):
+    """Hand-maintained master resume loaded from `master_resume.yaml`.
+
+    Source of truth for all downstream pipeline work. Each experience bullet
+    and entry carries a stable ID so tailoring (#026) can reference items
+    deterministically.
+    """
+
+    name: str = ""
+    email: str = ""
+    phone: str = ""
+    location: str = ""
+    summary: str = ""
+    experience: list[ExperienceEntry] = Field(default_factory=list)
+    education: list[EducationEntry] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
+    certifications: list[str] = Field(default_factory=list)
+
+
 class JobDescription(BaseModel):
     """Structured job description data."""
 
@@ -59,11 +109,13 @@ class ResumeOptimizerState(BaseModel):
 
     # Inputs
     resume_path: str = ""
+    master_path: str = ""
     job_description_path: str = ""
     job_description_text: str = ""
 
     # Parsed data
     resume: ResumeData = Field(default_factory=ResumeData)
+    master: ResumeMaster = Field(default_factory=ResumeMaster)
     job_description: JobDescription = Field(default_factory=JobDescription)
 
     # Analysis

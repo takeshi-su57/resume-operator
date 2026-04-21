@@ -55,6 +55,19 @@
 | [022](022-deployment-guide.md) | Docs | Write "How to Deploy" guide | Medium | 017 |
 | [023](023-conditional-routing-skip-optimization.md) | Feature | Conditional routing (skip optimization) | Low | 016 |
 
+## Phase 7: v2 — Structured source of truth (rework)
+
+Driven by a post-v1 review that surfaced the architectural gap: the system re-parses a PDF every run instead of maintaining a structured master. See [luckyplans plan 002](../../../../luckyplans/plans/002-resume-ats-tailor/plan.md) for context.
+
+| # | Type | Title | Priority | Depends On |
+|---|------|-------|----------|------------|
+| [024](024-master-resume-yaml-source-of-truth.md) | Feature | `master_resume.yaml` as source of truth | High | — |
+| [025](025-facts-bank-yaml.md) | Feature | `facts_bank.yaml` for items beyond master | High | 024 |
+| [026](026-tailored-resume-item-level-references.md) | Refactor | `TailoredResume` with item-level references | High | 024, 028 |
+| [027](027-deterministic-pdf-render.md) | Refactor | Deterministic PDF render from structured data | Medium | 026 |
+| [028](028-langchain-structured-output.md) | Refactor | `with_structured_output` (drop manual JSON parsing) | Medium | — |
+| [029](029-per-application-output-folder.md) | Feature | Per-application versioned output folder | Medium | 026 |
+
 ## Dependency Graph
 
 ```

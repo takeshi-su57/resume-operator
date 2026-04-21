@@ -1,0 +1,56 @@
+name: Jane Smith
+email: jane.smith@example.com
+phone: "+1 555 123 4567"
+location: San Francisco, CA
+summary: >
+  Senior fullstack engineer with 8 years of experience building distributed
+  systems in Go and TypeScript. Focus on platform reliability and developer
+  experience.
+
+experience:
+  - id: exp-1
+    role: Senior Software Engineer
+    company: Acme Corp
+    location: Remote
+    start_date: "2021-03"
+    end_date: present
+    bullets:
+      - id: exp-1-b1
+        text: Led migration of monolith to Go microservices, cutting p99 latency 40%.
+      - id: exp-1-b2
+        text: Designed gRPC contracts adopted by 12 teams across the company.
+      - id: exp-1-b3
+        text: Mentored 4 mid-level engineers and ran weekly architecture reviews.
+
+  - id: exp-2
+    role: Software Engineer
+    company: Widget Labs
+    location: San Francisco, CA
+    start_date: "2018-06"
+    end_date: "2021-02"
+    bullets:
+      - id: exp-2-b1
+        text: Shipped React dashboard used by 500+ internal operators daily.
+      - id: exp-2-b2
+        text: Introduced end-to-end Playwright tests, reducing regression bugs 60%.
+
+education:
+  - id: edu-1
+    degree: B.S. Computer Science
+    school: State University
+    location: Boston, MA
+    start_date: "2014"
+    end_date: "2018"
+    details: Dean's List, senior thesis on distributed consensus.
+
+skills:
+  - Go
+  - TypeScript
+  - React
+  - PostgreSQL
+  - Kubernetes
+  - gRPC
+  - Playwright
+
+certifications:
+  - AWS Certified Solutions Architect (Associate)

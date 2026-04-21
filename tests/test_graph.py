@@ -18,6 +18,7 @@ from resume_operator.graph import _route_after_ats_score, build_graph
 from resume_operator.state import ATSScore, ResumeOptimizerState
 
 EXPECTED_NODES = [
+    "load_master",
     "parse_resume",
     "ats_score",
     "analyze_gaps",
