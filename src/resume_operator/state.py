@@ -187,7 +187,8 @@ class ResumeOptimizerState(BaseModel):
     tailored_resume: TailoredResume = Field(default_factory=TailoredResume)
 
     # Output
-    output_path: str = ""
+    output_dir: str = ""  # per-application folder (data/applications/{date}_{slug}/)
+    output_path: str = ""  # PDF path (typically `{output_dir}/resume.pdf`)
     report: dict[str, object] = Field(default_factory=dict)
 
     # Tracking

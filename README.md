@@ -87,7 +87,9 @@ uv run python -m resume_operator bootstrap --resume my-resume.pdf --output data/
 # see input/facts_bank.example.yaml
 
 # Run the optimizer (preferred: master YAML)
+# Each run writes into its own folder under data/applications/{date}_{slug}/
 uv run python -m resume_operator run --master data/master_resume.yaml --facts data/facts_bank.yaml --job job_description.txt
+# Output: data/applications/2026-04-21_<slug>/{resume.pdf, results.json, tailored.yaml, diff.md}
 ```
 
 ## Commands

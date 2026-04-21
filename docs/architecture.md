@@ -100,6 +100,22 @@ Schema mismatches surface as `pydantic.ValidationError` (or provider-specific `B
 
 **Provider compatibility** (see `.env.example` for the full list): OpenAI (gpt-4o, gpt-4o-mini), Anthropic (Claude 3.5), and Google (Gemini 1.5) are fully supported. OpenRouter works with OpenAI-origin models; some open-weights models return truncated JSON under strict mode.
 
+## Per-Application Output Folder
+
+Each `run` reserves a fresh folder before invoking the graph (#029):
+
+```
+data/applications/{YYYY-MM-DD}_{slug}/
+├── resume.pdf       ← from generate_pdf
+├── results.json     ← from report_results
+├── tailored.yaml    ← serialized TailoredResume
+└── diff.md          ← human-readable per-item diff
+```
+
+Slug priority: explicit `JobDescription.company` (when known) → JD filename stem → 8-char SHA-256 hash of the JD text. Collisions append `-2`, `-3`, etc. — runs never overwrite each other.
+
+`--output` overrides the parent (default `data/applications/`); the per-run subfolder name is always derived automatically.
+
 ## Error Handling
 
 - Each node catches exceptions and records them in `state.errors`

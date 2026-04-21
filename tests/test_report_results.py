@@ -46,6 +46,7 @@ EXPECTED_KEYS = {
     "optimization_skipped",
     "optimization_changes",
     "tailored_resume",
+    "output_dir",
     "output_path",
     "errors",
 }
@@ -170,3 +171,24 @@ class TestReportResults:
 
         allowed_keys = {"report", "errors"}
         assert set(result.keys()).issubset(allowed_keys)
+
+    def test_writes_into_output_dir_when_set(
+        self, sample_state: ResumeOptimizerState, tmp_path: Path
+    ) -> None:
+        _setup_state(sample_state)
+        out_dir = tmp_path / "data" / "applications" / "2026-04-21_acme"
+        out_dir.mkdir(parents=True)
+        sample_state.output_dir = str(out_dir)
+
+        report_results(sample_state)
+
+        # All artefacts go inside the per-application folder.
+        assert (out_dir / "results.json").exists()
+        assert (out_dir / "diff.md").exists()
+        assert (out_dir / "tailored.yaml").exists()
+        # Tailored YAML is parseable and contains the items we set up.
+        import yaml
+
+        loaded = yaml.safe_load((out_dir / "tailored.yaml").read_text(encoding="utf-8"))
+        assert isinstance(loaded["items"], list)
+        assert any(it["source_id"] == "master:summary" for it in loaded["items"])
