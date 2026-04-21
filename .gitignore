@@ -213,4 +213,5 @@ data/
 .env
 
 .claude/settings.local.json
-input/
+input/*
+!input/*.example.yaml

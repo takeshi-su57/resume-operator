@@ -41,6 +41,14 @@ def _validate_resume(resume: Path) -> None:
         raise typer.BadParameter(f"'{resume}' is not a PDF file (expected .pdf extension).")
 
 
+def _validate_master(master: Path) -> None:
+    """Validate master YAML exists and has a YAML extension."""
+    if not master.exists() or not master.is_file():
+        raise typer.BadParameter(f"'{master}' does not exist or is not a file.")
+    if master.suffix.lower() not in {".yaml", ".yml"}:
+        raise typer.BadParameter(f"'{master}' is not a YAML file (expected .yaml or .yml).")
+
+
 def _validate_job(job: Path) -> None:
     """Validate job description file exists and is readable."""
     if not job.exists() or not job.is_file():
@@ -58,7 +66,12 @@ def _score_color(score: float) -> str:
 
 @app.command()
 def run(
-    resume: Path = typer.Option(..., "--resume", "-r", help="Path to resume PDF"),
+    master: Path = typer.Option(
+        None, "--master", "-m", help="Path to master_resume.yaml (preferred)"
+    ),
+    resume: Path = typer.Option(
+        None, "--resume", "-r", help="Path to resume PDF (legacy — use --master instead)"
+    ),
     job: Path = typer.Option(..., "--job", "-j", help="Path to job description text file"),
     output: Path = typer.Option(
         Path("data/optimized_resume.pdf"), "--output", "-o", help="Output PDF path"
@@ -68,13 +81,24 @@ def run(
 ) -> None:
     """Run the full resume optimization pipeline."""
     _setup_logging(verbose)
-    _validate_resume(resume)
+    if master is None and resume is None:
+        raise typer.BadParameter("Provide either --master (preferred) or --resume.")
+    if master is not None and resume is not None:
+        raise typer.BadParameter("Use --master or --resume, not both.")
+
+    if master is not None:
+        _validate_master(master)
+    else:
+        _validate_resume(resume)
     _validate_job(job)
 
     if dry_run:
+        source_line = (
+            f"[bold]Master:[/bold] {master}" if master else f"[bold]Resume:[/bold] {resume}"
+        )
         console.print(
             Panel(
-                f"[bold]Resume:[/bold] {resume}\n"
+                f"{source_line}\n"
                 f"[bold]Job description:[/bold] {job}\n"
                 f"[bold]Output:[/bold] {output}",
                 title="Dry run — inputs validated",
@@ -83,15 +107,18 @@ def run(
         )
         return
 
+    initial: dict[str, str] = {
+        "job_description_path": str(job),
+        "output_path": str(output),
+    }
+    if master is not None:
+        initial["master_path"] = str(master)
+    else:
+        initial["resume_path"] = str(resume)
+
     graph = build_graph()
     with Status("[bold cyan]Running optimization pipeline...", console=console):
-        result = graph.invoke(
-            {
-                "resume_path": str(resume),
-                "job_description_path": str(job),
-                "output_path": str(output),
-            }
-        )
+        result = graph.invoke(initial)
 
     errors: list[str] = result.get("errors", [])
     if errors:
@@ -182,24 +209,80 @@ def parse_resume(
 
 
 @app.command()
-def score(
+def bootstrap(
     resume: Path = typer.Option(..., "--resume", "-r", help="Path to resume PDF"),
+    output: Path = typer.Option(
+        Path("data/master_resume.yaml"), "--output", "-o", help="Output master_resume.yaml path"
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
+) -> None:
+    """One-time: parse a resume PDF via LLM and write a hand-editable `master_resume.yaml`.
+
+    This is the only command that calls the LLM to ingest a resume. From then on,
+    `run --master` uses the YAML directly.
+    """
+    from resume_operator.tools.master_resume import resume_data_to_master, save_master
+
+    _setup_logging(verbose)
+    _validate_resume(resume)
+
+    graph = build_graph()
+    with Status("[bold cyan]Bootstrapping master resume from PDF...", console=console):
+        result = graph.invoke({"resume_path": str(resume)})
+
+    errors: list[str] = result.get("errors", [])
+    if errors:
+        for error in errors:
+            console.print(f"[red]{error}[/red]")
+        raise typer.Exit(code=1)
+
+    resume_data: ResumeData = result["resume"]
+    master = resume_data_to_master(resume_data)
+    save_master(master, output)
+
+    console.print(
+        Panel(
+            f"[bold]Wrote:[/bold] {output}\n"
+            f"[bold]Experience entries:[/bold] {len(master.experience)}\n"
+            f"[bold]Education entries:[/bold] {len(master.education)}\n"
+            f"[bold]Skills:[/bold] {len(master.skills)}\n\n"
+            f"[yellow]Review the YAML, edit freely, and keep it under version control.[/yellow]",
+            title="Master resume bootstrapped",
+            border_style="green",
+        )
+    )
+
+
+@app.command()
+def score(
+    master: Path = typer.Option(
+        None, "--master", "-m", help="Path to master_resume.yaml (preferred)"
+    ),
+    resume: Path = typer.Option(None, "--resume", "-r", help="Path to resume PDF (legacy)"),
     job: Path = typer.Option(..., "--job", "-j", help="Path to job description text file"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
 ) -> None:
     """Score resume ATS compatibility against a job description."""
     _setup_logging(verbose)
-    _validate_resume(resume)
+    if master is None and resume is None:
+        raise typer.BadParameter("Provide either --master (preferred) or --resume.")
+    if master is not None and resume is not None:
+        raise typer.BadParameter("Use --master or --resume, not both.")
+    if master is not None:
+        _validate_master(master)
+    else:
+        _validate_resume(resume)
     _validate_job(job)
+
+    initial: dict[str, str] = {"job_description_path": str(job)}
+    if master is not None:
+        initial["master_path"] = str(master)
+    else:
+        initial["resume_path"] = str(resume)
 
     graph = build_score_graph()
     with Status("[bold cyan]Scoring resume...", console=console):
-        result = graph.invoke(
-            {
-                "resume_path": str(resume),
-                "job_description_path": str(job),
-            }
-        )
+        result = graph.invoke(initial)
 
     errors: list[str] = result.get("errors", [])
     if errors:
