@@ -91,7 +91,14 @@ def run(
     ),
     job: Path = typer.Option(..., "--job", "-j", help="Path to job description text file"),
     output: Path = typer.Option(
-        Path("data/optimized_resume.pdf"), "--output", "-o", help="Output PDF path"
+        None,
+        "--output",
+        "-o",
+        help=(
+            "Parent directory for per-application output folders "
+            "(default: data/applications/). Each run creates "
+            "{parent}/{YYYY-MM-DD}_{slug}/ — never overwrites prior runs."
+        ),
     ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate inputs without executing"),
@@ -123,20 +130,26 @@ def run(
             f"[bold]Master:[/bold] {master}" if master else f"[bold]Resume:[/bold] {resume}"
         )
         facts_line = f"\n[bold]Facts:[/bold] {resolved_facts}" if resolved_facts else ""
+        parent_line = f"\n[bold]Output parent:[/bold] {output or 'data/applications/'}"
         console.print(
             Panel(
-                f"{source_line}{facts_line}\n"
-                f"[bold]Job description:[/bold] {job}\n"
-                f"[bold]Output:[/bold] {output}",
+                f"{source_line}{facts_line}\n[bold]Job description:[/bold] {job}{parent_line}",
                 title="Dry run — inputs validated",
                 border_style="green",
             )
         )
         return
 
+    # Reserve a per-application output folder before invoking the graph.
+    from resume_operator.tools.output_dir import resolve_output_dir
+
+    jd_text = job.read_text(encoding="utf-8") if job.exists() else ""
+    output_dir = resolve_output_dir(parent=output, jd_path=job, jd_text=jd_text)
+
     initial: dict[str, str] = {
         "job_description_path": str(job),
-        "output_path": str(output),
+        "output_dir": str(output_dir),
+        "output_path": str(output_dir / "resume.pdf"),
     }
     if master is not None:
         initial["master_path"] = str(master)
