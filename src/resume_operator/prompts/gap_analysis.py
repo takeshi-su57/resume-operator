@@ -11,11 +11,6 @@ Job description:
 ATS score: {ats_score}
 Keyword gaps: {keyword_gaps}
 
-Identify specific gaps, highlight strengths, and suggest improvements.
-
-Return ONLY valid JSON:
-{{
-    "gaps": ["specific gap 1", "..."],
-    "strengths": ["strength 1", "..."],
-    "suggestions": ["actionable suggestion 1", "..."]
-}}"""
+Identify specific gaps, highlight strengths, and suggest concrete improvements.
+Populate each field of the output schema.
+"""

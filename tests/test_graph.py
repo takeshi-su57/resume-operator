@@ -15,6 +15,7 @@ from unittest.mock import MagicMock, patch
 from langgraph.graph.state import CompiledStateGraph
 
 from resume_operator.graph import _route_after_ats_score, build_graph
+from resume_operator.nodes.parse_resume import ResumeLLMOutput
 from resume_operator.state import ATSScore, ResumeOptimizerState
 
 EXPECTED_NODES = [
@@ -27,16 +28,12 @@ EXPECTED_NODES = [
     "report_results",
 ]
 
-VALID_LLM_JSON = """{
-    "name": "Jane Smith",
-    "email": "jane@example.com",
-    "phone": "",
-    "summary": "Engineer",
-    "experience": [],
-    "education": [],
-    "skills": ["Python"],
-    "certifications": []
-}"""
+PARSED = ResumeLLMOutput(
+    name="Jane Smith",
+    email="jane@example.com",
+    summary="Engineer",
+    skills=["Python"],
+)
 
 
 class TestGraphAssembly:
@@ -53,10 +50,10 @@ class TestGraphAssembly:
 
     @patch("resume_operator.nodes.report_results.RESULTS_PATH")
     @patch("resume_operator.nodes.generate_pdf.create_pdf")
-    @patch("resume_operator.nodes.optimize_content.get_llm")
-    @patch("resume_operator.nodes.analyze_gaps.get_llm")
-    @patch("resume_operator.nodes.ats_score.get_llm")
-    @patch("resume_operator.nodes.parse_resume.get_llm")
+    @patch("resume_operator.nodes.optimize_content.get_structured_llm")
+    @patch("resume_operator.nodes.analyze_gaps.get_structured_llm")
+    @patch("resume_operator.nodes.ats_score.get_structured_llm")
+    @patch("resume_operator.nodes.parse_resume.get_structured_llm")
     @patch("resume_operator.nodes.parse_resume.extract_text")
     def test_graph_runs_parse_resume(
         self,
@@ -72,7 +69,7 @@ class TestGraphAssembly:
         """Invoking the graph executes parse_resume and merges its output into state."""
         mock_extract.return_value = "Jane Smith\njane@example.com"
         mock_llm = MagicMock()
-        mock_llm.invoke.return_value.content = VALID_LLM_JSON
+        mock_llm.invoke.return_value = PARSED
         mock_parse_llm.return_value = mock_llm
 
         # Other LLM-calling nodes: let them fail gracefully

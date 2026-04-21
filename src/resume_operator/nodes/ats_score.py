@@ -1,14 +1,26 @@
 """Node: Score resume ATS compatibility against job description."""
 
+from __future__ import annotations
+
 import logging
 from typing import Any
 
+from pydantic import BaseModel, Field, ValidationError
+
 from resume_operator.prompts.ats_scoring import ATS_SCORE
 from resume_operator.state import ATSScore, ResumeOptimizerState
-from resume_operator.tools.json_parser import extract_json
-from resume_operator.tools.llm_provider import get_llm
+from resume_operator.tools.llm_provider import get_structured_llm
 
 logger = logging.getLogger(__name__)
+
+
+class ATSScoreLLMOutput(BaseModel):
+    """Schema handed to `with_structured_output` — the LLM fills this in directly."""
+
+    score: float = Field(..., description="ATS compatibility score, 0.0 to 1.0")
+    reasoning: str = Field(..., description="Short justification of the score")
+    keyword_matches: list[str] = Field(default_factory=list)
+    keyword_gaps: list[str] = Field(default_factory=list)
 
 
 def ats_score(state: ResumeOptimizerState) -> dict[str, Any]:
@@ -25,35 +37,30 @@ def ats_score(state: ResumeOptimizerState) -> dict[str, Any]:
         errors.append("ats_score: skipping — resume data is empty")
         return {"errors": errors}
 
-    # --- Call LLM with ATS scoring prompt ---
     try:
-        llm = get_llm()
+        llm = get_structured_llm(ATSScoreLLMOutput)
         prompt = ATS_SCORE.format(
             resume_json=state.resume.model_dump_json(),
             job_description=state.job_description.raw_text,
         )
         logger.debug("ats_score: LLM prompt: %s", prompt)
-        response = llm.invoke(prompt)
-        content = response.content if hasattr(response, "content") else str(response)
-        logger.debug("ats_score: LLM response: %s", content)
-        parsed = extract_json(str(content))
-    except ValueError as exc:
-        logger.error("ats_score: LLM returned invalid JSON: %s", exc)
-        errors.append(f"ats_score: LLM returned invalid JSON: {exc}")
+        parsed: ATSScoreLLMOutput = llm.invoke(prompt)
+        logger.debug("ats_score: LLM response: %s", parsed.model_dump_json())
+    except ValidationError as exc:
+        logger.error("ats_score: LLM returned schema-invalid data: %s", exc)
+        errors.append(f"ats_score: LLM returned schema-invalid data: {exc}")
         return {"errors": errors}
     except Exception as exc:
         logger.error("ats_score: LLM call failed: %s", exc)
         errors.append(f"ats_score: LLM call failed: {exc}")
         return {"errors": errors}
 
-    # --- Build ATSScore ---
-    raw_score = float(parsed.get("score", 0.0) or 0.0)
-    score = max(0.0, min(1.0, raw_score))
+    score = max(0.0, min(1.0, float(parsed.score)))
     result_score = ATSScore(
         score=score,
-        reasoning=parsed.get("reasoning") or "",
-        keyword_matches=parsed.get("keyword_matches") or [],
-        keyword_gaps=parsed.get("keyword_gaps") or [],
+        reasoning=parsed.reasoning,
+        keyword_matches=list(parsed.keyword_matches),
+        keyword_gaps=list(parsed.keyword_gaps),
     )
 
     logger.info(

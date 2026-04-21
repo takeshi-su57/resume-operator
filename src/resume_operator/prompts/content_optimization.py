@@ -24,13 +24,7 @@ Rewrite the resume sections to:
 5. Keep the original profile authentic — never invent experience; only use
    what is in the resume data or the facts bank
 
-Return ONLY valid JSON:
-{{
-    "sections": {{
-        "summary": "optimized summary...",
-        "experience": "optimized experience section...",
-        "skills": "optimized skills section...",
-        "education": "optimized education section..."
-    }},
-    "changes_made": ["description of change 1", "..."]
-}}"""
+Populate the output schema with `sections` (summary, experience, skills,
+education) as the rewritten text per section, and `changes_made` as a short
+list of what changed and why.
+"""

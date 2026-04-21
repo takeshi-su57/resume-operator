@@ -1,16 +1,51 @@
 """Node: Extract structured data from resume PDF."""
 
+from __future__ import annotations
+
 import logging
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel, Field, ValidationError
+
 from resume_operator.prompts.resume_parsing import PARSE_RESUME
 from resume_operator.state import JobDescription, ResumeData, ResumeOptimizerState
-from resume_operator.tools.json_parser import extract_json
-from resume_operator.tools.llm_provider import get_llm
+from resume_operator.tools.llm_provider import get_structured_llm
 from resume_operator.tools.pdf_parser import extract_text
 
 logger = logging.getLogger(__name__)
+
+
+class ResumeExperienceLLM(BaseModel):
+    role: str = ""
+    company: str = ""
+    start_date: str = ""
+    end_date: str = ""
+    description: str = ""
+
+
+class ResumeEducationLLM(BaseModel):
+    degree: str = ""
+    school: str = ""
+    start_date: str = ""
+    end_date: str = ""
+
+
+class ResumeLLMOutput(BaseModel):
+    """Schema handed to `with_structured_output` — the LLM fills this in directly.
+
+    Fixed sub-schemas (not raw dicts) so the generated JSON schema is compatible
+    with OpenAI's strict mode.
+    """
+
+    name: str = ""
+    email: str = ""
+    phone: str = ""
+    summary: str = ""
+    experience: list[ResumeExperienceLLM] = Field(default_factory=list)
+    education: list[ResumeEducationLLM] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
+    certifications: list[str] = Field(default_factory=list)
 
 
 def parse_resume(state: ResumeOptimizerState) -> dict[str, Any]:
@@ -39,34 +74,31 @@ def parse_resume(state: ResumeOptimizerState) -> dict[str, Any]:
 
     logger.debug("parse_resume: raw text (%d chars)", len(raw_text))
 
-    # --- Call LLM to structure the resume ---
+    # --- Structured LLM call ---
     try:
-        llm = get_llm()
+        llm = get_structured_llm(ResumeLLMOutput)
         prompt = PARSE_RESUME.format(resume_text=raw_text)
         logger.debug("parse_resume: LLM prompt: %s", prompt)
-        response = llm.invoke(prompt)
-        content = response.content if hasattr(response, "content") else str(response)
-        logger.debug("parse_resume: LLM response: %s", content)
-        parsed = extract_json(str(content))
-    except ValueError as exc:
-        logger.error("parse_resume: LLM returned invalid JSON: %s", exc)
-        errors.append(f"parse_resume: LLM returned invalid JSON: {exc}")
+        parsed: ResumeLLMOutput = llm.invoke(prompt)
+        logger.debug("parse_resume: LLM response: %s", parsed.model_dump_json())
+    except ValidationError as exc:
+        logger.error("parse_resume: LLM returned schema-invalid data: %s", exc)
+        errors.append(f"parse_resume: LLM returned schema-invalid data: {exc}")
         return {"errors": errors}
     except Exception as exc:
         logger.error("parse_resume: LLM call failed: %s", exc)
         errors.append(f"parse_resume: LLM call failed: {exc}")
         return {"errors": errors}
 
-    # --- Build ResumeData ---
     resume_data = ResumeData(
-        name=parsed.get("name") or "",
-        email=parsed.get("email") or "",
-        phone=parsed.get("phone") or "",
-        summary=parsed.get("summary") or "",
-        experience=parsed.get("experience") or [],
-        education=parsed.get("education") or [],
-        skills=parsed.get("skills") or [],
-        certifications=parsed.get("certifications") or [],
+        name=parsed.name,
+        email=parsed.email,
+        phone=parsed.phone,
+        summary=parsed.summary,
+        experience=[e.model_dump() for e in parsed.experience],
+        education=[e.model_dump() for e in parsed.education],
+        skills=list(parsed.skills),
+        certifications=list(parsed.certifications),
         raw_text=raw_text,
     )
     result["resume"] = resume_data

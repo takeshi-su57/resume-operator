@@ -1,9 +1,12 @@
 """LangChain model factory — returns a BaseChatModel based on config."""
 
+from __future__ import annotations
+
 import logging
 
 from langchain_core.language_models import BaseChatModel
-from pydantic import SecretStr
+from langchain_core.runnables import Runnable
+from pydantic import BaseModel, SecretStr
 
 from resume_operator.config import get_settings
 
@@ -70,3 +73,21 @@ def get_llm(
             api_key=SecretStr(api_key),
             base_url="https://openrouter.ai/api/v1",
         )
+
+
+def get_structured_llm[T: BaseModel](schema: type[T]) -> Runnable[object, T]:
+    """Return an LLM chain that returns a validated Pydantic instance of `schema`.
+
+    Wraps `get_llm().with_structured_output(schema)` — LangChain uses provider-native
+    function/tool-calling to coerce the response into the schema. The caller no longer
+    handles JSON fences, prose wrappers, or manual parsing; schema mismatches surface
+    as `pydantic.ValidationError` (or provider-specific errors) at `.invoke()` time.
+
+    Provider support notes (as of langchain 0.3):
+      - OpenAI, Anthropic, Google: fully supported
+      - OpenRouter via ChatOpenAI: supported for most OpenAI-compatible models
+    """
+    # `with_structured_output` returns `Runnable[..., dict[str, Any] | BaseModel]` per
+    # LangChain's type stubs, but the actual runtime value is always an instance of
+    # the provided Pydantic schema. Cast once here so every call site gets tight types.
+    return get_llm().with_structured_output(schema)  # type: ignore[return-value]

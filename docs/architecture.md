@@ -82,6 +82,14 @@ After `ats_score`, a routing function checks the score against `ATS_SKIP_THRESHO
 7. **generate_pdf**: ReportLab renders optimized PDF
 8. **report_results**: JSON report to `data/results.json`
 
+## LLM Output Handling
+
+All LLM-calling nodes use LangChain's `with_structured_output` (via `tools/llm_provider.get_structured_llm`). Each node defines an `…LLMOutput` Pydantic schema near its node function; LangChain hands the schema to the provider via native function/tool-calling and returns an already-validated instance. No manual JSON parsing or prompt-time "return ONLY valid JSON" boilerplate.
+
+Schema mismatches surface as `pydantic.ValidationError` (or provider-specific `BadRequestError` when the schema itself is incompatible with strict mode) and are recorded in `state.errors` via the standard record-and-continue pattern.
+
+**Provider compatibility** (see `.env.example` for the full list): OpenAI (gpt-4o, gpt-4o-mini), Anthropic (Claude 3.5), and Google (Gemini 1.5) are fully supported. OpenRouter works with OpenAI-origin models; some open-weights models return truncated JSON under strict mode.
+
 ## Error Handling
 
 - Each node catches exceptions and records them in `state.errors`
