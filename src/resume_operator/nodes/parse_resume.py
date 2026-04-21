@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, ValidationError
 from resume_operator.prompts.resume_parsing import PARSE_RESUME
 from resume_operator.state import JobDescription, ResumeData, ResumeOptimizerState
 from resume_operator.tools.llm_provider import get_structured_llm
+from resume_operator.tools.master_resume import resume_data_to_master
 from resume_operator.tools.pdf_parser import extract_text
 
 logger = logging.getLogger(__name__)
@@ -102,6 +103,10 @@ def parse_resume(state: ResumeOptimizerState) -> dict[str, Any]:
         raw_text=raw_text,
     )
     result["resume"] = resume_data
+    # Also synthesize a ResumeMaster with stable IDs so optimize_content (#026) has
+    # a source index even when the user is on the legacy PDF path. `bootstrap` uses
+    # this same conversion to seed a real YAML.
+    result["master"] = resume_data_to_master(resume_data)
 
     # --- Read job description ---
     job_raw_text = state.job_description_text

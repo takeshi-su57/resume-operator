@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 from resume_operator.graph import build_graph
 from resume_operator.nodes.analyze_gaps import GapAnalysisLLMOutput
 from resume_operator.nodes.ats_score import ATSScoreLLMOutput
-from resume_operator.nodes.optimize_content import OptimizedResumeLLMOutput, OptimizedSections
+from resume_operator.nodes.optimize_content import TailoredItemLLM, TailoredResumeLLMOutput
 from resume_operator.nodes.parse_resume import (
     ResumeEducationLLM,
     ResumeExperienceLLM,
@@ -50,14 +50,14 @@ GAPS_OUT = GapAnalysisLLMOutput(
     suggestions=["Add K8s projects", "Mention CI/CD pipelines"],
 )
 
-OPTIMIZED_OUT = OptimizedResumeLLMOutput(
-    sections=OptimizedSections(
-        summary="Senior Python engineer with cloud and container expertise",
-        experience="Built APIs and CI/CD pipelines at Corp",
-        skills="Python, AWS, Docker, Kubernetes, CI/CD",
-        education="BS CS, State U, 2016",
-    ),
-    changes_made=["Added Kubernetes to skills", "Mentioned CI/CD in experience"],
+OPTIMIZED_OUT = TailoredResumeLLMOutput(
+    items=[
+        TailoredItemLLM(source_id="master:summary", action="keep"),
+        TailoredItemLLM(source_id="master:exp-1-b1", action="keep"),
+        TailoredItemLLM(source_id="master:skill:Python", action="keep"),
+        TailoredItemLLM(source_id="master:skill:AWS", action="keep"),
+    ],
+    notes=["Emphasized Python and AWS for the backend role."],
 )
 
 
@@ -123,8 +123,9 @@ class TestFullPipeline:
         assert len(result["gap_analysis"].strengths) == 2
         assert len(result["gap_analysis"].suggestions) == 2
 
-        assert "summary" in result["optimized_resume"].sections
-        assert len(result["optimized_resume"].changes_made) == 2
+        # Item-level tailored output is the new source of truth.
+        assert len(result["tailored_resume"].items) == 4
+        assert result["tailored_resume"].notes
 
         assert result["output_path"] == "output/resume.pdf"
         assert isinstance(result["report"], dict)
@@ -174,5 +175,5 @@ class TestFullPipeline:
         assert len(result["errors"]) > 0
         assert any("ats_score" in e for e in result["errors"])
         assert len(result["gap_analysis"].gaps) > 0
-        assert len(result["optimized_resume"].sections) > 0
+        assert result["tailored_resume"].items
         assert isinstance(result["report"], dict)

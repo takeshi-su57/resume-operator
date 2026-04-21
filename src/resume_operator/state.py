@@ -126,6 +126,42 @@ class OptimizedResume(BaseModel):
     changes_made: list[str] = Field(default_factory=list)
 
 
+class TailoredItem(BaseModel):
+    """A single per-item tailoring decision.
+
+    Every tailored item references a stable ID in the master resume or facts
+    bank — this is the fabrication guardrail (#026). The optimizer cannot
+    synthesize text that isn't traceable back to a source.
+
+    `source_id` format:
+      - `master:exp-1`                → an experience role header (summary of that entry)
+      - `master:exp-1-b1`             → a specific bullet on a role
+      - `master:edu-1`                → an education entry
+      - `master:skill:Python`         → a skill
+      - `master:cert:AWS`             → a certification
+      - `master:summary`              → the top-of-resume summary
+      - `facts:proj-1`                → a project from the facts bank
+      - `facts:extra-1`               → an extra bullet from the facts bank
+      - `facts:skill:Docker`          → a skill from the facts bank
+      - `facts:cert:CKAD`             → a cert from the facts bank
+    """
+
+    source_id: str
+    action: str = "keep"  # one of: keep | reword | drop
+    original_text: str = ""
+    new_text: str = ""  # only meaningful when action == "reword"
+
+
+class TailoredResume(BaseModel):
+    """Structured tailored output — a list of per-item decisions, not free-form text."""
+
+    items: list[TailoredItem] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+    def kept_or_reworded(self) -> list[TailoredItem]:
+        return [i for i in self.items if i.action in {"keep", "reword"}]
+
+
 class ResumeOptimizerState(BaseModel):
     """Central state flowing through the LangGraph pipeline."""
 
@@ -148,6 +184,7 @@ class ResumeOptimizerState(BaseModel):
 
     # Optimization
     optimized_resume: OptimizedResume = Field(default_factory=OptimizedResume)
+    tailored_resume: TailoredResume = Field(default_factory=TailoredResume)
 
     # Output
     output_path: str = ""
