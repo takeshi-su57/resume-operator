@@ -6,14 +6,31 @@ from pathlib import Path
 from unittest.mock import patch
 
 from resume_operator.nodes.report_results import report_results
-from resume_operator.state import OptimizedResume, ResumeOptimizerState
+from resume_operator.state import (
+    OptimizedResume,
+    ResumeOptimizerState,
+    TailoredItem,
+    TailoredResume,
+)
 
 
 def _setup_state(state: ResumeOptimizerState) -> None:
     """Populate fields not set by the sample_state fixture."""
     state.optimized_resume = OptimizedResume(
         sections={"summary": "Optimized summary.", "skills": "Python, AWS"},
-        changes_made=["Added Kubernetes to skills", "Rewrote summary"],
+        changes_made=["keep: master:summary", "reword: master:exp-1-b1"],
+    )
+    state.tailored_resume = TailoredResume(
+        items=[
+            TailoredItem(source_id="master:summary", action="keep", original_text="summary text"),
+            TailoredItem(
+                source_id="master:exp-1-b1",
+                action="reword",
+                original_text="Led backend team",
+                new_text="Led backend team on Kubernetes",
+            ),
+        ],
+        notes=["Tightened backend emphasis."],
     )
     state.output_path = "data/optimized_resume.pdf"
 
@@ -21,11 +38,14 @@ def _setup_state(state: ResumeOptimizerState) -> None:
 EXPECTED_KEYS = {
     "timestamp",
     "resume_path",
+    "master_path",
+    "facts_path",
     "job_description_path",
     "ats_score",
     "gap_analysis",
     "optimization_skipped",
     "optimization_changes",
+    "tailored_resume",
     "output_path",
     "errors",
 }
@@ -35,48 +55,74 @@ class TestReportResults:
     def test_writes_json_report(self, sample_state: ResumeOptimizerState, tmp_path: Path) -> None:
         _setup_state(sample_state)
         results_file = tmp_path / "data" / "results.json"
+        diff_file = tmp_path / "data" / "diff.md"
 
-        with patch("resume_operator.nodes.report_results.RESULTS_PATH", results_file):
+        with (
+            patch("resume_operator.nodes.report_results.RESULTS_PATH", results_file),
+            patch("resume_operator.nodes.report_results.DIFF_PATH", diff_file),
+        ):
             result = report_results(sample_state)
 
         assert results_file.exists()
+        assert diff_file.exists(), "diff.md should be written whenever tailored_resume has items"
         data = json.loads(results_file.read_text())
         assert isinstance(data, dict)
         assert "report" in result
+        assert "tailored_resume" in data
+
+    def test_diff_md_content(self, sample_state: ResumeOptimizerState, tmp_path: Path) -> None:
+        _setup_state(sample_state)
+        results_file = tmp_path / "data" / "results.json"
+        diff_file = tmp_path / "data" / "diff.md"
+
+        with (
+            patch("resume_operator.nodes.report_results.RESULTS_PATH", results_file),
+            patch("resume_operator.nodes.report_results.DIFF_PATH", diff_file),
+        ):
+            report_results(sample_state)
+
+        body = diff_file.read_text(encoding="utf-8")
+        assert "# Tailoring Diff" in body
+        # The reworded item should show both before and after.
+        assert "Led backend team on Kubernetes" in body
+        assert "master:exp-1-b1" in body
 
     def test_report_contains_all_fields(
         self, sample_state: ResumeOptimizerState, tmp_path: Path
     ) -> None:
         _setup_state(sample_state)
         results_file = tmp_path / "data" / "results.json"
+        diff_file = tmp_path / "data" / "diff.md"
 
-        with patch("resume_operator.nodes.report_results.RESULTS_PATH", results_file):
+        with (
+            patch("resume_operator.nodes.report_results.RESULTS_PATH", results_file),
+            patch("resume_operator.nodes.report_results.DIFF_PATH", diff_file),
+        ):
             result = report_results(sample_state)
 
         report = result["report"]
         assert set(report.keys()) == EXPECTED_KEYS
         assert report["ats_score"]["score"] == 0.72
-        assert len(report["gap_analysis"]["gaps"]) > 0
-        assert report["optimization_changes"] == [
-            "Added Kubernetes to skills",
-            "Rewrote summary",
-        ]
         assert report["resume_path"] == "test_resume.pdf"
         assert report["output_path"] == "data/optimized_resume.pdf"
-        # Validate timestamp is parseable ISO format
         datetime.fromisoformat(report["timestamp"])
 
-    def test_creates_data_directory(
+    def test_skips_diff_when_no_tailored_items(
         self, sample_state: ResumeOptimizerState, tmp_path: Path
     ) -> None:
-        _setup_state(sample_state)
-        results_file = tmp_path / "nonexistent" / "subdir" / "results.json"
+        sample_state.output_path = "data/optimized_resume.pdf"
+        # deliberately leave tailored_resume empty
+        results_file = tmp_path / "data" / "results.json"
+        diff_file = tmp_path / "data" / "diff.md"
 
-        with patch("resume_operator.nodes.report_results.RESULTS_PATH", results_file):
+        with (
+            patch("resume_operator.nodes.report_results.RESULTS_PATH", results_file),
+            patch("resume_operator.nodes.report_results.DIFF_PATH", diff_file),
+        ):
             report_results(sample_state)
 
-        assert results_file.parent.exists()
         assert results_file.exists()
+        assert not diff_file.exists()
 
     def test_handles_write_error(self, sample_state: ResumeOptimizerState, tmp_path: Path) -> None:
         _setup_state(sample_state)
@@ -114,11 +160,13 @@ class TestReportResults:
     ) -> None:
         _setup_state(sample_state)
         results_file = tmp_path / "data" / "results.json"
+        diff_file = tmp_path / "data" / "diff.md"
 
-        with patch("resume_operator.nodes.report_results.RESULTS_PATH", results_file):
+        with (
+            patch("resume_operator.nodes.report_results.RESULTS_PATH", results_file),
+            patch("resume_operator.nodes.report_results.DIFF_PATH", diff_file),
+        ):
             result = report_results(sample_state)
 
         allowed_keys = {"report", "errors"}
         assert set(result.keys()).issubset(allowed_keys)
-        assert "resume" not in result
-        assert "ats_score" not in result

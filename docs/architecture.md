@@ -82,6 +82,14 @@ After `ats_score`, a routing function checks the score against `ATS_SKIP_THRESHO
 7. **generate_pdf**: ReportLab renders optimized PDF
 8. **report_results**: JSON report to `data/results.json`
 
+## Tailoring as Per-Item Decisions
+
+`optimize_content` does not produce free-form text blobs. It builds a `TailoredResume` — a list of `TailoredItem` decisions over a `SourceIndex` (built from `ResumeMaster` + `FactsBank`). Every item references a stable `source_id` like `master:exp-1-b1` or `facts:proj-2`. Three actions: `keep`, `reword`, `drop`. Fabricated `source_id`s (LLM inventing IDs) are rejected at the node boundary and logged.
+
+`report_results` writes `data/diff.md` — a human-readable before/after of every keep/reword/drop decision, grouped into Additions (pulled from facts bank), Rewordings (with before/after text), and Deletions.
+
+`generate_pdf` currently reads the legacy `OptimizedResume.sections` blob projection of the tailored output (the projection lives in `optimize_content` for back-compat). Direct structured rendering is #027.
+
 ## LLM Output Handling
 
 All LLM-calling nodes use LangChain's `with_structured_output` (via `tools/llm_provider.get_structured_llm`). Each node defines an `…LLMOutput` Pydantic schema near its node function; LangChain hands the schema to the provider via native function/tool-calling and returns an already-validated instance. No manual JSON parsing or prompt-time "return ONLY valid JSON" boilerplate.

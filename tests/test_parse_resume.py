@@ -130,7 +130,7 @@ class TestParseResume:
 
         result = parse_resume(base_state)
 
-        allowed_keys = {"resume", "job_description", "errors"}
+        allowed_keys = {"resume", "master", "job_description", "errors"}
         assert set(result.keys()).issubset(allowed_keys)
 
     @patch("resume_operator.nodes.parse_resume.get_structured_llm")
