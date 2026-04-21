@@ -29,7 +29,7 @@ PARSED_RESUME = ResumeLLMOutput(
             company="Corp",
             start_date="2020",
             end_date="present",
-            description="Built APIs",
+            bullets=["Built APIs", "Shipped to AWS"],
         )
     ],
     education=[ResumeEducationLLM(degree="BS CS", school="State U", end_date="2016")],

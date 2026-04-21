@@ -106,6 +106,59 @@ class TestParseResumeCommand:
         assert "Missing" in result.output or "--resume" in result.output
 
 
+class TestBootstrapCommand:
+    def test_rejects_non_pdf(self, tmp_path: Path) -> None:
+        fake = tmp_path / "resume.txt"
+        fake.write_text("not a pdf")
+        result = runner.invoke(app, ["bootstrap", "--resume", str(fake)])
+        assert result.exit_code != 0
+        assert "not a PDF" in _clean_output(result.output)
+
+    @patch("resume_operator.main.build_graph")
+    @patch("resume_operator.nodes.parse_resume.parse_resume")
+    def test_calls_only_parse_resume_not_full_graph(
+        self, mock_parse: MagicMock, mock_build: MagicMock, tmp_path: Path
+    ) -> None:
+        """Bootstrap must not invoke the full graph — that would burn LLM calls on
+        ats_score / analyze_gaps / optimize_content the user never asked for."""
+        fake_pdf = tmp_path / "resume.pdf"
+        fake_pdf.touch()
+        out = tmp_path / "master.yaml"
+
+        mock_parse.return_value = {
+            "resume": ResumeData(
+                name="Jane Smith",
+                email="jane@example.com",
+                experience=[
+                    {
+                        "role": "Engineer",
+                        "company": "Corp",
+                        "start_date": "2020",
+                        "end_date": "present",
+                        "description": "- Built APIs\n- Shipped to AWS",
+                    }
+                ],
+                skills=["Python", "AWS"],
+            ),
+            "errors": [],
+        }
+
+        result = runner.invoke(app, ["bootstrap", "--resume", str(fake_pdf), "--output", str(out)])
+
+        assert result.exit_code == 0, result.output
+        mock_parse.assert_called_once()
+        # Crucial: the full graph is not invoked during bootstrap.
+        mock_build.assert_not_called()
+        assert out.exists()
+
+        import yaml
+
+        written = yaml.safe_load(out.read_text(encoding="utf-8"))
+        assert written["name"] == "Jane Smith"
+        # Bullets round-trip: dense newline description → list of ExperienceBullet entries.
+        assert len(written["experience"][0]["bullets"]) == 2
+
+
 class TestRunCommand:
     def test_file_not_found(self) -> None:
         result = runner.invoke(app, ["run", "--resume", "nope.pdf", "--job", "nope.txt"])

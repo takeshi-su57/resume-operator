@@ -23,7 +23,11 @@ VALID_OUTPUT = ResumeLLMOutput.model_validate(
                 "company": "TechCorp",
                 "start_date": "2020",
                 "end_date": "present",
-                "description": "Led backend team",
+                "bullets": [
+                    "Led backend team building microservices",
+                    "Designed gRPC contracts adopted by 12 teams",
+                    "Mentored 4 mid-level engineers",
+                ],
             }
         ],
         "education": [
@@ -76,6 +80,29 @@ class TestParseResume:
         assert "job_description" in result
         assert result["job_description"].raw_text == base_state.job_description_text
         mock_extract.assert_called_once_with(Path("resume.pdf"))
+
+    @patch("resume_operator.nodes.parse_resume.get_structured_llm")
+    @patch("resume_operator.nodes.parse_resume.extract_text")
+    def test_preserves_every_bullet(
+        self, mock_extract: MagicMock, mock_get_llm: MagicMock, base_state: ResumeOptimizerState
+    ) -> None:
+        """Three source bullets become three separately-addressable master bullets."""
+        mock_extract.return_value = SAMPLE_RESUME_TEXT
+        mock_get_llm.return_value = _make_llm(VALID_OUTPUT)
+
+        result = parse_resume(base_state)
+
+        # ResumeData carries them newline-joined (legacy shape).
+        description = result["resume"].experience[0]["description"]
+        assert description.count("\n") == 2  # three bullets → two newlines
+        # ResumeMaster (synthesized alongside) has them split back out with stable IDs.
+        master_bullets = result["master"].experience[0].bullets
+        assert [b.text for b in master_bullets] == [
+            "Led backend team building microservices",
+            "Designed gRPC contracts adopted by 12 teams",
+            "Mentored 4 mid-level engineers",
+        ]
+        assert [b.id for b in master_bullets] == ["exp-1-b1", "exp-1-b2", "exp-1-b3"]
 
     @patch("resume_operator.nodes.parse_resume.extract_text")
     def test_records_error_on_pdf_failure(

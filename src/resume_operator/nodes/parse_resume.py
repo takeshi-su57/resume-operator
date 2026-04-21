@@ -22,7 +22,10 @@ class ResumeExperienceLLM(BaseModel):
     company: str = ""
     start_date: str = ""
     end_date: str = ""
-    description: str = ""
+    # `bullets` carries every per-role bullet verbatim. The old `description: str`
+    # field encouraged the LLM to summarize multiple bullets into one sentence,
+    # which defeated the purpose of a structured master resume (see issue #60).
+    bullets: list[str] = Field(default_factory=list)
 
 
 class ResumeEducationLLM(BaseModel):
@@ -47,6 +50,24 @@ class ResumeLLMOutput(BaseModel):
     education: list[ResumeEducationLLM] = Field(default_factory=list)
     skills: list[str] = Field(default_factory=list)
     certifications: list[str] = Field(default_factory=list)
+
+
+def _experience_to_dict(entry: ResumeExperienceLLM) -> dict[str, str]:
+    """Flatten the LLM experience entry to the legacy `dict[str, str]` shape.
+
+    Bullets collapse into a `description` string with one `- bullet` per line.
+    `tools/master_resume._parse_bullets` re-splits on newlines when building the
+    `ResumeMaster`, so this round-trip preserves every bullet as a separate item
+    with its own stable ID.
+    """
+    description = "\n".join(f"- {b.strip()}" for b in entry.bullets if b.strip())
+    return {
+        "role": entry.role,
+        "company": entry.company,
+        "start_date": entry.start_date,
+        "end_date": entry.end_date,
+        "description": description,
+    }
 
 
 def parse_resume(state: ResumeOptimizerState) -> dict[str, Any]:
@@ -96,7 +117,7 @@ def parse_resume(state: ResumeOptimizerState) -> dict[str, Any]:
         email=parsed.email,
         phone=parsed.phone,
         summary=parsed.summary,
-        experience=[e.model_dump() for e in parsed.experience],
+        experience=[_experience_to_dict(e) for e in parsed.experience],
         education=[e.model_dump() for e in parsed.education],
         skills=list(parsed.skills),
         certifications=list(parsed.certifications),
