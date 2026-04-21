@@ -1,14 +1,25 @@
 """Node: Analyze gaps between resume and job requirements."""
 
+from __future__ import annotations
+
 import logging
 from typing import Any
 
+from pydantic import BaseModel, Field, ValidationError
+
 from resume_operator.prompts.gap_analysis import ANALYZE_GAPS
 from resume_operator.state import GapAnalysis, ResumeOptimizerState
-from resume_operator.tools.json_parser import extract_json
-from resume_operator.tools.llm_provider import get_llm
+from resume_operator.tools.llm_provider import get_structured_llm
 
 logger = logging.getLogger(__name__)
+
+
+class GapAnalysisLLMOutput(BaseModel):
+    """Schema handed to `with_structured_output` — the LLM fills this in directly."""
+
+    gaps: list[str] = Field(default_factory=list)
+    strengths: list[str] = Field(default_factory=list)
+    suggestions: list[str] = Field(default_factory=list)
 
 
 def analyze_gaps(state: ResumeOptimizerState) -> dict[str, Any]:
@@ -20,9 +31,8 @@ def analyze_gaps(state: ResumeOptimizerState) -> dict[str, Any]:
     logger.info("analyze_gaps: starting")
     errors: list[str] = list(state.errors)
 
-    # --- Call LLM with gap analysis prompt ---
     try:
-        llm = get_llm()
+        llm = get_structured_llm(GapAnalysisLLMOutput)
         prompt = ANALYZE_GAPS.format(
             resume_json=state.resume.model_dump_json(),
             job_description=state.job_description.raw_text,
@@ -30,24 +40,21 @@ def analyze_gaps(state: ResumeOptimizerState) -> dict[str, Any]:
             keyword_gaps=state.ats_score.keyword_gaps,
         )
         logger.debug("analyze_gaps: LLM prompt: %s", prompt)
-        response = llm.invoke(prompt)
-        content = response.content if hasattr(response, "content") else str(response)
-        logger.debug("analyze_gaps: LLM response: %s", content)
-        parsed = extract_json(str(content))
-    except ValueError as exc:
-        logger.error("analyze_gaps: LLM returned invalid JSON: %s", exc)
-        errors.append(f"analyze_gaps: LLM returned invalid JSON: {exc}")
+        parsed: GapAnalysisLLMOutput = llm.invoke(prompt)
+        logger.debug("analyze_gaps: LLM response: %s", parsed.model_dump_json())
+    except ValidationError as exc:
+        logger.error("analyze_gaps: LLM returned schema-invalid data: %s", exc)
+        errors.append(f"analyze_gaps: LLM returned schema-invalid data: {exc}")
         return {"errors": errors}
     except Exception as exc:
         logger.error("analyze_gaps: LLM call failed: %s", exc)
         errors.append(f"analyze_gaps: LLM call failed: {exc}")
         return {"errors": errors}
 
-    # --- Build GapAnalysis ---
     gap_analysis = GapAnalysis(
-        gaps=parsed.get("gaps") or [],
-        strengths=parsed.get("strengths") or [],
-        suggestions=parsed.get("suggestions") or [],
+        gaps=list(parsed.gaps),
+        strengths=list(parsed.strengths),
+        suggestions=list(parsed.suggestions),
     )
 
     logger.info(

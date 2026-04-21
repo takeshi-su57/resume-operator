@@ -8,14 +8,7 @@ Resume data:
 Job description:
 {job_description}
 
-Analyze keyword overlap, skills alignment, and experience relevance.
-
-Return ONLY valid JSON:
-{{
-    "score": 0.0,
-    "reasoning": "...",
-    "keyword_matches": ["..."],
-    "keyword_gaps": ["..."]
-}}
-
-Score range: 0.0 (no match) to 1.0 (perfect match)."""
+Analyze keyword overlap, skills alignment, and experience relevance. Populate the
+output schema — score in the range 0.0 (no match) to 1.0 (perfect match), plus a
+short reasoning, concrete keyword matches, and concrete keyword gaps.
+"""
