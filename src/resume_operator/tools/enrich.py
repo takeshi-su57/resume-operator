@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError
@@ -27,6 +27,9 @@ from pydantic import BaseModel, Field, ValidationError
 from resume_operator.prompts.enrich import ENRICH_POLISH, ENRICH_QUESTIONS
 from resume_operator.state import FactItem, FactsBank, ResumeMaster
 from resume_operator.tools.llm_provider import get_structured_llm
+
+if TYPE_CHECKING:
+    from rich.console import Console
 
 logger = logging.getLogger(__name__)
 
@@ -213,3 +216,116 @@ def collect_existing_ids(bank: FactsBank) -> set[str]:
     ids.update(item.id for item in bank.projects)
     ids.update(item.id for item in bank.extra_bullets)
     return ids
+
+
+# --- Interactive session --------------------------------------------------
+#
+# Kept here (rather than in main.py) so `run`'s auto-enrich path and any future
+# non-CLI caller can reuse the same loop. The prompting primitives still come
+# from Rich; the function reads from stdin via Rich's `Prompt.ask`.
+
+
+def run_interactive_session(
+    master: ResumeMaster,
+    facts: FactsBank,
+    jd_text: str,
+    *,
+    max_questions: int = 5,
+    console: Console | None = None,
+) -> SessionPlan:
+    """Interactive enrichment session: ask → answer → polish → accept/edit/reject.
+
+    Returns a `SessionPlan` with accepted items. Caller is responsible for
+    persisting the plan via `assemble_additions` + `facts_bank.append_to_facts`.
+
+    The console is optional so tests can inject a silent/buffer console; when
+    `None`, a default Rich `Console` is used.
+    """
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.prompt import Prompt
+    from rich.status import Status
+
+    active_console = console if console is not None else Console()
+
+    with Status("[bold cyan]Generating interview questions...", console=active_console):
+        questions = generate_questions(master, facts, jd_text, n_max=max_questions)
+
+    if not questions:
+        active_console.print(
+            Panel(
+                "The LLM didn't surface any gap-worthy questions. Either your "
+                "master already covers this JD, or the question-generation call "
+                "failed (run with --verbose to see).",
+                title="No questions",
+                border_style="yellow",
+            )
+        )
+        return SessionPlan()
+
+    active_console.print(
+        Panel(
+            f"[bold]{len(questions)} question(s) to discuss.[/bold]\n\n"
+            "[dim]For each question: answer with facts and metrics — e.g. "
+            '"I built 50+ endpoints serving 2M requests/day" — not with instructions. '
+            "Type 'skip' to skip, 'quit' to end early.[/dim]",
+            title="Enrichment session",
+            border_style="cyan",
+        )
+    )
+
+    plan = SessionPlan()
+    for i, question in enumerate(questions, 1):
+        active_console.print(
+            f"\n[bold cyan]Question {i}/{len(questions)}:[/bold cyan] {question.question}"
+        )
+        active_console.print(f"[dim]why: {question.why}[/dim]")
+        active_console.print(
+            '[dim]Answer with facts and metrics (e.g. "I built 50+ endpoints serving '
+            "2M requests/day\"). Do NOT type instructions like 'make it professional' "
+            "— that's the LLM's job in the polish step.[/dim]"
+        )
+        answer = Prompt.ask("[bold]>[/bold]", default="", console=active_console)
+        answer_stripped = answer.strip()
+        if answer_stripped.lower() == "quit":
+            break
+        if not answer_stripped or answer_stripped.lower() == "skip":
+            continue
+
+        with Status("[bold cyan]Polishing...", console=active_console):
+            polished = polish_answer(question, answer, master, jd_text)
+        if polished is None:
+            active_console.print("[red]Polish step failed — skipping this question.[/red]")
+            continue
+
+        target = f" → [magenta]{polished.bucket}[/magenta]" + (
+            f" (role_id={polished.role_id})" if polished.role_id else ""
+        )
+        active_console.print(f"\n[bold green]Polished:[/bold green]{target}")
+        active_console.print(f"  {polished.polished_text}")
+
+        choice = Prompt.ask(
+            "[a]ccept / [e]dit / [r]eject / [s]kip / [q]uit",
+            choices=["a", "e", "r", "s", "q"],
+            default="a",
+            console=active_console,
+        )
+        if choice == "q":
+            break
+        if choice in ("r", "s"):
+            continue
+        final_text = polished.polished_text
+        if choice == "e":
+            edited = Prompt.ask(
+                "[bold]Your wording[/bold]", default=final_text, console=active_console
+            )
+            final_text = edited.strip() or final_text
+        plan.items.append(
+            AcceptedItem(
+                text=final_text,
+                bucket=polished.bucket,
+                role_id=polished.role_id,
+            )
+        )
+
+    return plan

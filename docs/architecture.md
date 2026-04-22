@@ -50,7 +50,7 @@ load_master            parse_resume
 
 Use `resume-operator bootstrap --resume old.pdf --output data/master_resume.yaml` once to seed the YAML from an existing PDF, then maintain the YAML by hand.
 
-When a tailoring run comes back thin because the master + facts lack material for a specific JD, run `resume-operator enrich --master … --facts … --job …` — an interactive interview where the LLM asks grounded questions (drawn from the intersection of your master and the JD's requirements), you answer in free text, the LLM polishes your answer to an ATS-ready bullet, and accepted items append to the facts bank with a `source: "enrich YYYY-MM-DD"` stamp. The facts bank grows durably across sessions.
+When a tailoring run comes back thin (fewer than `enrich_threshold` items kept, default 6), `run` itself pauses and offers an interactive interview: the LLM asks grounded questions drawn from the intersection of your master and the JD's requirements, you answer in free text, the LLM polishes your answer to an ATS-ready bullet, and accepted items append to the facts bank with a `source: "enrich YYYY-MM-DD"` stamp. The graph then re-invokes once with the enriched facts. The facts bank grows durably across sessions. Pass `--no-enrich` to skip the interview (e.g., for headless / CI runs).
 
 If a `--facts <yaml>` path is provided (or `data/facts_bank.yaml` exists), the facts bank is loaded alongside the master and handed to `optimize_content` as a distinct pool the LLM may pull from when a fact strengthens the match for the JD.
 

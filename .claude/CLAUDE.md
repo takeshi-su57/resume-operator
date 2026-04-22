@@ -64,7 +64,7 @@ docs/                        → Architecture docs + ADRs
 
 **Storage** — Local JSON files in `data/`. Results written after each run. No database.
 
-**CLI** — Typer app in `main.py` with Rich for progress display. Commands: `run`, `bootstrap`, `enrich`, `parse-resume`, `score`. `run` and `score` accept `--master` (preferred) or `--resume` (legacy). `enrich` is interactive — LLM asks grounded questions, user answers in free text, LLM polishes to ATS bullets, accepted items append to `facts_bank.yaml`.
+**CLI** — Typer app in `main.py` with Rich for progress display. Commands: `run`, `bootstrap`, `parse-resume`, `score`. `run` and `score` accept `--master` (preferred) or `--resume` (legacy). When `run` produces a thin tailored resume (kept items < `enrich_threshold`, default 6), it pauses and offers an interactive enrichment interview inline — LLM asks grounded questions, user answers in free text, LLM polishes to ATS bullets, accepted items append to `facts_bank.yaml`, and the graph re-invokes with the enriched facts. `--no-enrich` disables the prompt for headless runs.
 
 ## Key Commands
 

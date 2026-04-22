@@ -96,9 +96,8 @@ uv run python -m resume_operator run --master data/master_resume.yaml --facts da
 
 | Command | Description |
 |---------|-------------|
-| `uv run python -m resume_operator run --master <yaml> --job <job>` | Run full optimization pipeline |
+| `uv run python -m resume_operator run --master <yaml> --job <job>` | Run full pipeline; auto-offers enrichment interview if tailoring is thin |
 | `uv run python -m resume_operator bootstrap --resume <pdf>` | One-time: PDF → `master_resume.yaml` |
-| `uv run python -m resume_operator enrich --master <yaml> --job <job>` | Interactive interview that grows `facts_bank.yaml` |
 | `uv run python -m resume_operator parse-resume` | Parse a resume PDF (legacy, no YAML write) |
 | `uv run python -m resume_operator score --master <yaml> --job <job>` | ATS compatibility score only |
 | `uv run pytest` | Run tests |
