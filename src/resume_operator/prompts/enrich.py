@@ -53,6 +53,9 @@ own words. Rewrite their answer as a single resume bullet that:
    technology, metrics, or scope the candidate did not mention. Paraphrase,
    don't invent.
 6. Is ATS-friendly — plain text, concrete, specific.
+7. Uses plain ASCII punctuation — hyphens (`-`), straight quotes, `->`
+   instead of `→`, three periods instead of `…`. No zero-width characters
+   or placeholder ellipsis.
 
 Also classify where this bullet belongs, using exactly one of these buckets:
   - `project`        — standalone project not tied to a specific role
