@@ -64,7 +64,7 @@ docs/                        → Architecture docs + ADRs
 
 **Storage** — Local JSON files in `data/`. Results written after each run. No database.
 
-**CLI** — Typer app in `main.py` with Rich for progress display. Commands: `run`, `bootstrap`, `parse-resume`, `score`. `run` and `score` accept `--master` (preferred) or `--resume` (legacy).
+**CLI** — Typer app in `main.py` with Rich for progress display. Commands: `run`, `bootstrap`, `enrich`, `parse-resume`, `score`. `run` and `score` accept `--master` (preferred) or `--resume` (legacy). `enrich` is interactive — LLM asks grounded questions, user answers in free text, LLM polishes to ATS bullets, accepted items append to `facts_bank.yaml`.
 
 ## Key Commands
 

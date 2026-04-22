@@ -159,6 +159,177 @@ class TestBootstrapCommand:
         assert len(written["experience"][0]["bullets"]) == 2
 
 
+class TestEnrichCommand:
+    def _write_master_yaml(self, tmp_path: Path) -> Path:
+        master = tmp_path / "master.yaml"
+        master.write_text(
+            "name: Jane Smith\n"
+            "email: jane@example.com\n"
+            "experience:\n"
+            "  - id: exp-1\n"
+            "    role: Senior Engineer\n"
+            "    company: TechCorp\n"
+            "    bullets:\n"
+            "      - id: exp-1-b1\n"
+            "        text: Led backend team\n"
+            "skills: [Python]\n",
+            encoding="utf-8",
+        )
+        return master
+
+    @patch("resume_operator.tools.enrich.get_structured_llm")
+    def test_dry_run_prints_questions_no_prompts(
+        self, mock_get_llm: MagicMock, tmp_path: Path
+    ) -> None:
+        from resume_operator.tools.enrich import EnrichQuestionLLM, EnrichQuestionsLLMOutput
+
+        master = self._write_master_yaml(tmp_path)
+        facts = tmp_path / "facts.yaml"
+        job = tmp_path / "job.txt"
+        job.write_text("Backend engineer needed.", encoding="utf-8")
+
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value = EnrichQuestionsLLMOutput(
+            questions=[
+                EnrichQuestionLLM(
+                    area="role:exp-1",
+                    question="How large was the backend team you led at TechCorp?",
+                    why="JD asks for team leadership.",
+                )
+            ]
+        )
+        mock_get_llm.return_value = mock_llm
+
+        result = runner.invoke(
+            app,
+            [
+                "enrich",
+                "--master",
+                str(master),
+                "--facts",
+                str(facts),
+                "--job",
+                str(job),
+                "--dry-run",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "How large was the backend team" in result.output
+        # Dry run must NOT write the facts bank.
+        assert not facts.exists()
+
+    def test_rejects_out_of_range_max_questions(self, tmp_path: Path) -> None:
+        master = self._write_master_yaml(tmp_path)
+        job = tmp_path / "job.txt"
+        job.write_text("anything", encoding="utf-8")
+
+        result = runner.invoke(
+            app,
+            [
+                "enrich",
+                "--master",
+                str(master),
+                "--job",
+                str(job),
+                "--max-questions",
+                "99",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "between 1 and 10" in _clean_output(result.output)
+
+    @patch("resume_operator.tools.enrich.get_structured_llm")
+    def test_full_session_writes_accepted_item(
+        self, mock_get_llm: MagicMock, tmp_path: Path
+    ) -> None:
+        """One question asked; user answers; polish returns a project bullet;
+        user accepts; facts_bank.yaml is written with the polished text."""
+        from resume_operator.tools.enrich import (
+            EnrichQuestionLLM,
+            EnrichQuestionsLLMOutput,
+            PolishedFactLLMOutput,
+        )
+
+        master = self._write_master_yaml(tmp_path)
+        facts = tmp_path / "facts.yaml"
+        job = tmp_path / "job.txt"
+        job.write_text("Backend engineer needed.", encoding="utf-8")
+
+        # Two distinct LLM calls during enrich: questions pass, then polish pass.
+        # get_structured_llm returns a fresh mock each call; we stash distinct
+        # return_values on each via side_effect.
+        question_llm = MagicMock()
+        question_llm.invoke.return_value = EnrichQuestionsLLMOutput(
+            questions=[
+                EnrichQuestionLLM(
+                    question="Did you design any public APIs?",
+                    why="JD emphasizes API design.",
+                )
+            ]
+        )
+        polish_llm = MagicMock()
+        polish_llm.invoke.return_value = PolishedFactLLMOutput(
+            polished_text="Designed RESTful API serving 50+ endpoints.",
+            bucket="project",
+        )
+        mock_get_llm.side_effect = [question_llm, polish_llm]
+
+        # stdin: answer → accept
+        user_input = "I designed a REST API for our internal tools.\na\n"
+
+        result = runner.invoke(
+            app,
+            [
+                "enrich",
+                "--master",
+                str(master),
+                "--facts",
+                str(facts),
+                "--job",
+                str(job),
+                "--max-questions",
+                "1",
+            ],
+            input=user_input,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert facts.exists()
+
+        import yaml
+
+        written = yaml.safe_load(facts.read_text(encoding="utf-8"))
+        assert len(written["projects"]) == 1
+        assert "RESTful API" in written["projects"][0]["text"]
+        assert written["projects"][0]["source"].startswith("enrich ")
+
+    @patch("resume_operator.tools.enrich.get_structured_llm")
+    def test_session_with_no_questions_exits_cleanly(
+        self, mock_get_llm: MagicMock, tmp_path: Path
+    ) -> None:
+        from resume_operator.tools.enrich import EnrichQuestionsLLMOutput
+
+        master = self._write_master_yaml(tmp_path)
+        facts = tmp_path / "facts.yaml"
+        job = tmp_path / "job.txt"
+        job.write_text("anything", encoding="utf-8")
+
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value = EnrichQuestionsLLMOutput(questions=[])
+        mock_get_llm.return_value = mock_llm
+
+        result = runner.invoke(
+            app,
+            ["enrich", "--master", str(master), "--facts", str(facts), "--job", str(job)],
+        )
+
+        assert result.exit_code == 0
+        assert "No questions" in _clean_output(result.output)
+        assert not facts.exists()
+
+
 class TestRunCommand:
     def test_file_not_found(self) -> None:
         result = runner.invoke(app, ["run", "--resume", "nope.pdf", "--job", "nope.txt"])

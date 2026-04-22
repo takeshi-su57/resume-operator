@@ -351,5 +351,163 @@ def score(
         console.print("[yellow]No ATS score produced.[/yellow]")
 
 
+@app.command()
+def enrich(
+    master: Path = typer.Option(..., "--master", "-m", help="Path to master_resume.yaml"),
+    facts: Path = typer.Option(
+        Path("data/facts_bank.yaml"),
+        "--facts",
+        "-f",
+        help="Path to facts_bank.yaml (created if missing when items are accepted)",
+    ),
+    job: Path = typer.Option(..., "--job", "-j", help="Path to job description text file"),
+    max_questions: int = typer.Option(
+        5, "--max-questions", "-n", help="Maximum questions per session (1-10)"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Print the questions the LLM would ask; no prompting, no writes"
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
+) -> None:
+    """Interactive enrichment session: LLM asks grounded questions, you answer in
+    your own words, LLM polishes to ATS-ready bullets, accepted items land in
+    facts_bank.yaml.
+    """
+    from rich.prompt import Prompt
+
+    from resume_operator.tools.enrich import (
+        AcceptedItem,
+        SessionPlan,
+        assemble_additions,
+        collect_existing_ids,
+        generate_questions,
+        polish_answer,
+    )
+    from resume_operator.tools.facts_bank import append_to_facts, load_facts
+    from resume_operator.tools.master_resume import load_master
+
+    _setup_logging(verbose)
+    _validate_master(master)
+    _validate_job(job)
+    if max_questions < 1 or max_questions > 10:
+        raise typer.BadParameter("--max-questions must be between 1 and 10")
+
+    master_obj = load_master(master)
+    facts_obj = load_facts(facts) if facts.exists() else None
+    from resume_operator.state import FactsBank
+
+    facts_obj = facts_obj or FactsBank()
+    jd_text = job.read_text(encoding="utf-8")
+
+    # --- Question generation pass ---
+    with Status("[bold cyan]Generating interview questions...", console=console):
+        questions = generate_questions(master_obj, facts_obj, jd_text, n_max=max_questions)
+
+    if not questions:
+        console.print(
+            Panel(
+                "The LLM didn't surface any gap-worthy questions. Either your master "
+                "already covers this JD, or the question-generation call failed "
+                "(run with --verbose to see).",
+                title="No questions",
+                border_style="yellow",
+            )
+        )
+        return
+
+    console.print(
+        Panel(
+            f"[bold]{len(questions)} question(s) to discuss:[/bold]\n\n"
+            + "\n\n".join(
+                f"[cyan]{i + 1}. [{q.area}][/cyan] {q.question}\n   [dim]why: {q.why}[/dim]"
+                for i, q in enumerate(questions)
+            ),
+            title="Enrichment questions",
+            border_style="cyan",
+        )
+    )
+
+    if dry_run:
+        console.print("[yellow]--dry-run: stopping before the interactive loop.[/yellow]")
+        return
+
+    # --- Interactive loop ---
+    plan = SessionPlan()
+    for i, question in enumerate(questions, 1):
+        console.print(
+            f"\n[bold cyan]Question {i}/{len(questions)}:[/bold cyan] {question.question}"
+        )
+        console.print(f"[dim]why: {question.why}[/dim]")
+        answer = Prompt.ask(
+            "[bold]Your answer[/bold] (or 'skip' / 'quit')",
+            default="skip",
+            console=console,
+        )
+        if answer.strip().lower() == "quit":
+            break
+        if answer.strip().lower() == "skip" or not answer.strip():
+            continue
+
+        with Status("[bold cyan]Polishing...", console=console):
+            polished = polish_answer(question, answer, master_obj, jd_text)
+        if polished is None:
+            console.print("[red]Polish step failed — skipping this question.[/red]")
+            continue
+
+        target = f" → [magenta]{polished.bucket}[/magenta]" + (
+            f" (role_id={polished.role_id})" if polished.role_id else ""
+        )
+        console.print(f"\n[bold green]Polished:[/bold green]{target}")
+        console.print(f"  {polished.polished_text}")
+
+        choice = Prompt.ask(
+            "[a]ccept / [e]dit / [r]eject / [s]kip / [q]uit",
+            choices=["a", "e", "r", "s", "q"],
+            default="a",
+            console=console,
+        )
+        if choice == "q":
+            break
+        if choice == "r" or choice == "s":
+            continue
+        final_text = polished.polished_text
+        if choice == "e":
+            edited = Prompt.ask("[bold]Your wording[/bold]", default=final_text, console=console)
+            final_text = edited.strip() or final_text
+        plan.items.append(
+            AcceptedItem(
+                text=final_text,
+                bucket=polished.bucket,
+                role_id=polished.role_id,
+            )
+        )
+
+    # --- Persistence ---
+    if not plan.items:
+        console.print("[yellow]No items accepted — facts_bank.yaml unchanged.[/yellow]")
+        return
+
+    existing_ids = collect_existing_ids(facts_obj)
+    projects, extra_bullets, skills, certifications = assemble_additions(
+        plan, existing_ids=existing_ids
+    )
+    append_to_facts(
+        facts,
+        projects=projects,
+        extra_bullets=extra_bullets,
+        skills=skills,
+        certifications=certifications,
+    )
+    console.print(
+        Panel(
+            f"[bold]Wrote:[/bold] {facts}\n"
+            f"Projects: +{len(projects)}  |  Extra bullets: +{len(extra_bullets)}  |  "
+            f"Skills: +{len(skills)}  |  Certs: +{len(certifications)}",
+            title="Facts bank updated",
+            border_style="green",
+        )
+    )
+
+
 if __name__ == "__main__":
     app()
