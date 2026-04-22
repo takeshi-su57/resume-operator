@@ -384,16 +384,28 @@ def bootstrap(
     output: Path = typer.Option(
         Path("data/master_resume.yaml"), "--output", "-o", help="Output master_resume.yaml path"
     ),
+    no_interview: bool = typer.Option(
+        False,
+        "--no-interview",
+        help=(
+            "Skip the post-parse interview that asks for missing senior-format "
+            "fields (headline, links, per-role tech, skill groups). Useful for "
+            "scripted or CI runs."
+        ),
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
 ) -> None:
     """One-time: parse a resume PDF via LLM and write a hand-editable `master_resume.yaml`.
 
-    This is the only command that calls the LLM to ingest a resume. From then on,
-    `run --master` uses the YAML directly.
+    After the LLM parse, walks an interactive interview asking for any
+    senior-format fields the source PDF didn't carry (headline, Portfolio /
+    LinkedIn / GitHub URLs, per-role tech stacks, categorised skill groups).
+    Pass `--no-interview` to skip the interview entirely.
     """
     from resume_operator.nodes.parse_resume import parse_resume as parse_resume_node
-    from resume_operator.state import ResumeOptimizerState
-    from resume_operator.tools.master_resume import resume_data_to_master, save_master
+    from resume_operator.state import ResumeMaster, ResumeOptimizerState
+    from resume_operator.tools.bootstrap_interview import run_interview, should_run_interview
+    from resume_operator.tools.master_resume import save_master
 
     _setup_logging(verbose)
     _validate_resume(resume)
@@ -412,16 +424,25 @@ def bootstrap(
             console.print(f"[red]{error}[/red]")
         raise typer.Exit(code=1)
 
-    resume_data: ResumeData = result["resume"]
-    master = resume_data_to_master(resume_data)
+    master: ResumeMaster = result["master"]
+
+    # Interactive post-parse interview (#70) — fill in the senior-format fields
+    # the LLM couldn't extract from the source PDF (URLs, per-role tech, skill
+    # groupings, fallback headline).
+    if should_run_interview(no_interview=no_interview):
+        master = run_interview(master, console=console)
+
     save_master(master, output)
 
+    headline_status = "set" if master.headline else "empty (tailor writes one per JD)"
     console.print(
         Panel(
             f"[bold]Wrote:[/bold] {output}\n"
             f"[bold]Experience entries:[/bold] {len(master.experience)}\n"
             f"[bold]Education entries:[/bold] {len(master.education)}\n"
-            f"[bold]Skills:[/bold] {len(master.skills)}\n\n"
+            f"[bold]Skills:[/bold] {len(master.all_skills())}\n"
+            f"[bold]Links:[/bold] {len(master.links)}\n"
+            f"[bold]Headline:[/bold] {headline_status}\n\n"
             f"[yellow]Review the YAML, edit freely, and keep it under version control.[/yellow]",
             title="Master resume bootstrapped",
             border_style="green",

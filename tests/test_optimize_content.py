@@ -12,6 +12,7 @@ from resume_operator.nodes.optimize_content import (
 from resume_operator.state import ResumeOptimizerState
 
 VALID_OUTPUT = TailoredResumeLLMOutput(
+    tailored_headline="Senior Backend Engineer · 8+ years · Python, AWS",
     tailored_summary="Senior engineer with 8+ years shipping Python/AWS backends.",
     items=[
         TailoredItemLLM(
@@ -54,6 +55,10 @@ class TestOptimizeContent:
         assert "Kubernetes-native" in result["tailored_resume"].items[0].new_text
         # Tailored summary round-trips (issue #66).
         assert result["tailored_resume"].tailored_summary.startswith("Senior engineer")
+        # Tailored headline round-trips (issue #70).
+        assert result["tailored_resume"].tailored_headline == (
+            "Senior Backend Engineer · 8+ years · Python, AWS"
+        )
         # Legacy projection still populates sections for back-compat, and the
         # tailored_summary wins over any kept master:summary.
         assert "optimized_resume" in result

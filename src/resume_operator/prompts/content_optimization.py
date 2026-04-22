@@ -2,7 +2,21 @@
 
 OPTIMIZE_CONTENT = """You are tailoring a candidate's resume for a specific job.
 
-Your job has two parts:
+Your job has three parts:
+
+### Part 0 — Tailored headline
+
+Write a short JD-weighted tagline that sits directly under the candidate's
+name on the tailored resume. Rules:
+- 10-15 words max. 2-4 identity tags separated by ` · ` (space, middle dot,
+  space). Example shape: "Senior Backend Engineer · 10+ years · Node.js, AWS".
+- Grounded STRICTLY in master facts — titles the candidate actually held,
+  years they can show, companies they actually worked at, tech the master
+  lists. Do NOT invent "Ex-Google" unless Google is on the master. Do NOT
+  invent years or specialisations.
+- Weighted toward the JD. A backend JD should yield a backend-leaning
+  headline; an AI role should surface AI/ML tags the master supports.
+- Return as the `tailored_headline` field of the output.
 
 ### Part 1 — Tailored summary
 
@@ -35,6 +49,7 @@ item whose `source_id` is not in this menu will be rejected.
 ### Output schema
 
 Return a `TailoredResumeLLMOutput` with:
+- `tailored_headline` — the tagline from Part 0 (string)
 - `tailored_summary` — the fresh summary from Part 1 (string)
 - `items` — list of per-item decisions (see below); do NOT include a
   `master:summary` entry here.
@@ -53,10 +68,14 @@ specific JD.
 
 ### Output style
 
-Use plain ASCII punctuation in `tailored_summary` and `new_text`:
+Use plain ASCII punctuation in `tailored_headline`, `tailored_summary` and
+`new_text`:
 - Hyphens (`-`), not en-dashes or non-breaking hyphens
 - Straight quotes (`"` and `'`), not curly
 - `->` instead of `→`; `...` instead of `…`
-The rendered PDF's default font doesn't carry those exotic glyphs and would
+- The one exception: in `tailored_headline`, use the middle-dot `·` (U+00B7)
+  between tags. That character IS in the renderer's font.
+
+The rendered PDF's default font doesn't carry exotic Unicode glyphs and would
 render them as black boxes; keep the wording portable.
 """

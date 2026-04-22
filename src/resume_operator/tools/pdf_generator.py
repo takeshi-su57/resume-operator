@@ -168,6 +168,7 @@ class _RenderPlan:
     """Structured, layout-agnostic view of what to render."""
 
     def __init__(self) -> None:
+        self.headline: str = ""  # #70: tailored_headline (dynamic) or master.headline (fallback)
         self.summary: str = ""
         # ordered: role_id -> list of bullet texts (kept/reworded)
         self.experience_by_role: dict[str, list[str]] = {}
@@ -192,11 +193,12 @@ def _build_render_plan(
     index = build_source_index(master, facts)
     plan = _RenderPlan()
 
-    # Tailored summary (issue #66) is the fresh JD-crafted opener. When set, it
-    # wins over any kept `master:summary` item — the two would otherwise render
-    # twice in the SUMMARY section.
+    # Tailored summary (issue #66) / headline (issue #70) — dynamic per-JD
+    # strings the tailor writes fresh each run. When non-empty they win over
+    # their static `master.*` equivalents.
     if tailored.tailored_summary:
         plan.summary = tailored.tailored_summary
+    plan.headline = tailored.tailored_headline or master.headline
 
     for item in tailored.kept_or_reworded():
         entry = index.get(item.source_id)
@@ -262,8 +264,14 @@ def _render_default(master: ResumeMaster, plan: _RenderPlan, frame_width: float)
     if master.name:
         flowables.append(Paragraph(escape(_sanitize_for_pdf(master.name)), styles["name"]))
     # Tagline sits between name and rule so name+tagline feel like one block (#68).
-    if master.headline:
-        flowables.append(Paragraph(escape(_sanitize_for_pdf(master.headline)), styles["headline"]))
+    # #70: tailored_headline wins over master.headline when non-empty — the tailor
+    # crafts it per-JD (same pattern as tailored_summary). master.headline is the
+    # fallback used for score-only runs or when the tailor didn't emit one.
+    effective_headline = plan.headline
+    if effective_headline:
+        flowables.append(
+            Paragraph(escape(_sanitize_for_pdf(effective_headline)), styles["headline"])
+        )
     flowables.append(
         HRFlowable(
             width="100%",

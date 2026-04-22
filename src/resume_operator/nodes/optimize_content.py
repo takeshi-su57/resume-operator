@@ -40,6 +40,7 @@ class TailoredItemLLM(BaseModel):
 
 class TailoredResumeLLMOutput(BaseModel):
     tailored_summary: str = ""  # fresh JD-crafted SUMMARY text — not sourced from the items list
+    tailored_headline: str = ""  # fresh JD-crafted tagline under the name (#70)
     items: list[TailoredItemLLM] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
 
@@ -86,12 +87,13 @@ def optimize_content(state: ResumeOptimizerState) -> dict[str, Any]:
         items=validated_items,
         notes=list(parsed.notes),
         tailored_summary=parsed.tailored_summary.strip(),
+        tailored_headline=parsed.tailored_headline.strip(),
     )
     optimized_legacy = _project_to_sections(tailored, index)
 
     logger.info(
         "optimize_content: completed — items=%d (kept=%d, reworded=%d, dropped=%d), "
-        "fabricated_rejected=%d, notes=%d, summary=%s",
+        "fabricated_rejected=%d, notes=%d, summary=%s, headline=%s",
         len(tailored.items),
         sum(1 for i in tailored.items if i.action == "keep"),
         sum(1 for i in tailored.items if i.action == "reword"),
@@ -99,6 +101,7 @@ def optimize_content(state: ResumeOptimizerState) -> dict[str, Any]:
         len(rejected),
         len(tailored.notes),
         "yes" if tailored.tailored_summary else "no",
+        "yes" if tailored.tailored_headline else "no",
     )
 
     result: dict[str, Any] = {

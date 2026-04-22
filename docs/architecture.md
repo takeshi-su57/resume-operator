@@ -97,11 +97,15 @@ After `ats_score`, a routing function checks the score against `ATS_SKIP_THRESHO
 **Unicode sanitization (#66)**: every string that reaches the renderer passes through `_sanitize_for_pdf` — a boundary-layer that translates exotic Unicode (arrows `→`, non-breaking hyphens `‑`, curly quotes `'"`, horizontal ellipsis `…`) to ASCII and strips zero-width characters. Helvetica (the built-in font) can't render those glyphs, so without sanitization they come out as black `.notdef` boxes. `tailored.yaml` and `facts_bank.yaml` keep the LLM's original text; only the PDF text stream is normalized.
 
 **Senior-format fields (#68)**: `ResumeMaster` carries four optional additions that bring the render closer to senior-engineer CV conventions:
-- `headline` — short tagline under the name (e.g. *"Senior Software Engineer · Founding Engineer · Ex-Google"*)
+- `headline` — static fallback tagline under the name. The renderer prefers the per-JD `TailoredResume.tailored_headline` (#70) when non-empty; `master.headline` only shows when the tailor didn't emit one (e.g. score-only runs).
 - `links` — structured Portfolio/LinkedIn/GitHub rendered as a second contact line
 - `skill_groups` — categorised skills (Languages / Frontend / Backend / Cloud). Flattens into the source_index with the same `master:skill:<name>` IDs, so the tailor's fabrication guard doesn't need to know whether the master is grouped or flat.
 - `ExperienceEntry.tech` — per-role tech stack rendered as a dim `Tech: A, B, C` line after the bullets
-All four are optional; older YAMLs without them fall back gracefully (no headline line, flat skills, no tech line). The bootstrap prompt asks the LLM to extract them when they appear in the source PDF; otherwise they stay empty.
+All four are optional; older YAMLs without them fall back gracefully (no headline line, flat skills, no tech line).
+
+**Bootstrap interview (#70)**: after the LLM parses a resume PDF, `bootstrap` runs an interactive interview asking the user for any senior-format field the LLM couldn't extract (missing headline, URLs for Portfolio/LinkedIn/GitHub, per-role tech stacks, skill categorisation). The interview skips silently when stdin isn't a TTY or when `--no-interview` is passed. For skill grouping, the interview calls a separate LLM via `tools/skill_grouping.propose_groups` that proposes categories from the flat skill list; the user accepts or rejects the whole block.
+
+**Dynamic headline (#70)**: `TailoredResume.tailored_headline` is a fresh JD-crafted tagline written by the optimizer every run, alongside `tailored_summary`. Grounded strictly in master facts (titles, years, companies, tech) — no invented "Ex-Google". Same accept/reject fabrication-safety shape as the summary. When non-empty it replaces `master.headline` in the rendered PDF.
 
 Templates are configured via `RESUME_TEMPLATE` (`default | compact | modern`); only `default` is implemented today, unknown values fall back to default with a warning.
 
