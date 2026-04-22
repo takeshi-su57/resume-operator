@@ -181,3 +181,73 @@ class TestParseResume:
 
         assert "errors" in result
         assert any("resume_path is empty" in e for e in result["errors"])
+
+
+class TestSeniorFormatExtraction:
+    """`_build_master_from_llm` must propagate the #68 optional fields
+    (headline, links, skill_groups, per-role tech) through to the
+    `ResumeMaster` instead of letting them get dropped in translation."""
+
+    @patch("resume_operator.nodes.parse_resume.get_structured_llm")
+    @patch("resume_operator.nodes.parse_resume.extract_text")
+    def test_extracts_all_senior_fields(
+        self, mock_extract: MagicMock, mock_get_llm: MagicMock, base_state: ResumeOptimizerState
+    ) -> None:
+        mock_extract.return_value = SAMPLE_RESUME_TEXT
+        rich_output = ResumeLLMOutput.model_validate(
+            {
+                "name": "Jane Smith",
+                "headline": "Senior Engineer · Founding Engineer · Ex-Google",
+                "email": "jane@example.com",
+                "location": "SF",
+                "links": [
+                    {"label": "GitHub", "url": "github.com/jsmith"},
+                    {"label": "LinkedIn", "url": "linkedin.com/in/jane"},
+                ],
+                "experience": [
+                    {
+                        "role": "Senior Engineer",
+                        "company": "Acme",
+                        "start_date": "2021",
+                        "end_date": "present",
+                        "bullets": ["Shipped it"],
+                        "tech": ["Python", "Docker"],
+                    }
+                ],
+                "skill_groups": [
+                    {"category": "Languages", "items": ["Python", "Go"]},
+                    {"category": "Cloud", "items": ["AWS"]},
+                ],
+            }
+        )
+        mock_get_llm.return_value = _make_llm(rich_output)
+
+        result = parse_resume(base_state)
+        master = result["master"]
+
+        assert master.headline.startswith("Senior Engineer")
+        assert [lk.label for lk in master.links] == ["GitHub", "LinkedIn"]
+        assert master.experience[0].tech == ["Python", "Docker"]
+        assert len(master.skill_groups) == 2
+        assert master.skill_groups[0].category == "Languages"
+        assert master.skill_groups[0].items == ["Python", "Go"]
+        # `all_skills()` flattens across flat + groups for the source_index path.
+        assert set(master.all_skills()) == {"Python", "Go", "AWS"}
+
+    @patch("resume_operator.nodes.parse_resume.get_structured_llm")
+    @patch("resume_operator.nodes.parse_resume.extract_text")
+    def test_missing_senior_fields_defaults_to_empty(
+        self, mock_extract: MagicMock, mock_get_llm: MagicMock, base_state: ResumeOptimizerState
+    ) -> None:
+        """When the source PDF doesn't have a tagline / links / tech / groups,
+        the master stays valid — fields just default to empty."""
+        mock_extract.return_value = SAMPLE_RESUME_TEXT
+        mock_get_llm.return_value = _make_llm(VALID_OUTPUT)
+
+        result = parse_resume(base_state)
+        master = result["master"]
+
+        assert master.headline == ""
+        assert master.links == []
+        assert master.skill_groups == []
+        assert all(e.tech == [] for e in master.experience)

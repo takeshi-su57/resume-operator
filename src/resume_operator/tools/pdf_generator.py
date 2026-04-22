@@ -258,9 +258,12 @@ def _render_default(master: ResumeMaster, plan: _RenderPlan, frame_width: float)
     styles = _default_styles()
     flowables: list[object] = []
 
-    # --- Header: name banner + accent rule + contact line ---
+    # --- Header: name → tagline → accent rule → contact → links ---
     if master.name:
         flowables.append(Paragraph(escape(_sanitize_for_pdf(master.name)), styles["name"]))
+    # Tagline sits between name and rule so name+tagline feel like one block (#68).
+    if master.headline:
+        flowables.append(Paragraph(escape(_sanitize_for_pdf(master.headline)), styles["headline"]))
     flowables.append(
         HRFlowable(
             width="100%",
@@ -275,6 +278,15 @@ def _render_default(master: ResumeMaster, plan: _RenderPlan, frame_width: float)
     ]
     if contact_parts:
         flowables.append(Paragraph(escape("  ·  ".join(contact_parts)), styles["contact"]))
+    # Second contact line for portfolio / LinkedIn / GitHub when present (#68).
+    if master.links:
+        link_parts = [
+            _sanitize_for_pdf(f"{lk.label}: {lk.url}" if lk.label else lk.url)
+            for lk in master.links
+            if lk.url or lk.label
+        ]
+        if link_parts:
+            flowables.append(Paragraph(escape("  ·  ".join(link_parts)), styles["contact"]))
 
     # --- Summary ---
     if plan.summary:
@@ -296,6 +308,11 @@ def _render_default(master: ResumeMaster, plan: _RenderPlan, frame_width: float)
                 flowables.append(_role_row(role, styles, frame_width))
             for bullet in bullets:
                 flowables.append(Paragraph(_bullet(bullet), styles["bullet"]))
+            # Per-role tech line (#68). Sits right under the bullets as a dim italic
+            # summary — ATS keyword bonus + recruiter skim aid.
+            if role is not None and role.tech:
+                tech_str = "Tech: " + ", ".join(role.tech)
+                flowables.append(Paragraph(escape(_sanitize_for_pdf(tech_str)), styles["tech"]))
             flowables.append(Spacer(1, 0.05 * inch))
         # Virtual buckets ("projects", "extras") not tied to a master role.
         for virtual_id, bullets in plan.experience_by_role.items():
@@ -309,7 +326,31 @@ def _render_default(master: ResumeMaster, plan: _RenderPlan, frame_width: float)
             flowables.append(Spacer(1, 0.05 * inch))
 
     # --- Skills ---
-    if plan.skills:
+    # When the master has `skill_groups`, render grouped (one line per category,
+    # bolded category label + comma-separated items). Otherwise fall back to the
+    # flat `·`-separated line (#68 back-compat).
+    tailored_skills_set = {s for s in plan.skills}
+    visible_groups: list[tuple[str, list[str]]] = []
+    for group in master.skill_groups:
+        # Only include items that survived tailoring (were kept/reworded into plan.skills).
+        # If plan.skills is empty (e.g. the tailor didn't return skill items), fall
+        # through to the flat path below.
+        if tailored_skills_set:
+            filtered = [s for s in group.items if s in tailored_skills_set]
+        else:
+            filtered = list(group.items)
+        if filtered:
+            visible_groups.append((group.category, filtered))
+
+    if visible_groups:
+        flowables.extend(_section_header("SKILLS", frame_width))
+        for category, items in visible_groups:
+            sanitized_items = [_sanitize_for_pdf(i) for i in items]
+            line = f"<b>{escape(_sanitize_for_pdf(category))}:</b> " + escape(
+                ", ".join(sanitized_items)
+            )
+            flowables.append(Paragraph(line, styles["body"]))
+    elif plan.skills:
         flowables.extend(_section_header("SKILLS", frame_width))
         sanitized_skills = [_sanitize_for_pdf(s) for s in plan.skills]
         flowables.append(Paragraph(escape("  ·  ".join(sanitized_skills)), styles["body"]))
@@ -354,6 +395,15 @@ def _default_styles() -> dict[str, ParagraphStyle]:
             spaceAfter=0,
             alignment=0,
         ),
+        "headline": ParagraphStyle(
+            "Headline",
+            parent=base["BodyText"],
+            fontName="Helvetica",
+            fontSize=11,
+            leading=14,
+            textColor=_ACCENT,
+            spaceAfter=2,
+        ),
         "contact": ParagraphStyle(
             "Contact",
             parent=base["BodyText"],
@@ -361,7 +411,18 @@ def _default_styles() -> dict[str, ParagraphStyle]:
             fontSize=9.5,
             leading=12,
             textColor=_MUTED_GREY,
-            spaceAfter=8,
+            spaceAfter=2,
+        ),
+        "tech": ParagraphStyle(
+            "Tech",
+            parent=base["BodyText"],
+            fontName="Helvetica-Oblique",
+            fontSize=9,
+            leading=12,
+            textColor=_MUTED_GREY,
+            leftIndent=14,
+            spaceBefore=2,
+            spaceAfter=2,
         ),
         "section": ParagraphStyle(
             "Section",

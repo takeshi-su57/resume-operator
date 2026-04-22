@@ -36,6 +36,9 @@ class ExperienceEntry(BaseModel):
     start_date: str = ""
     end_date: str = ""
     bullets: list[ExperienceBullet] = Field(default_factory=list)
+    tech: list[str] = Field(default_factory=list)
+    # Per-role tech list rendered as a `Tech: ...` line after the bullets (issue #68).
+    # Optional — empty list means no tech line renders for this role.
 
 
 class EducationEntry(BaseModel):
@@ -50,23 +53,67 @@ class EducationEntry(BaseModel):
     details: str = ""
 
 
+class Link(BaseModel):
+    """A labeled URL on the resume header (Portfolio, LinkedIn, GitHub, …)."""
+
+    label: str
+    url: str
+
+
+class SkillGroup(BaseModel):
+    """A named group of skills rendered as a categorised SKILLS block (#68)."""
+
+    category: str
+    items: list[str] = Field(default_factory=list)
+
+
 class ResumeMaster(BaseModel):
     """Hand-maintained master resume loaded from `master_resume.yaml`.
 
     Source of truth for all downstream pipeline work. Each experience bullet
     and entry carries a stable ID so tailoring (#026) can reference items
     deterministically.
+
+    Fields added in #68 are all optional — existing `master_resume.yaml`
+    files without them still load and render:
+      - `headline` — tagline under the name
+      - `links` — portfolio / LinkedIn / GitHub, shown on a second contact line
+      - `skill_groups` — categorised skills; when non-empty it wins over the
+        flat `skills` list for rendering (but `skills` is still consulted by
+        the source_index so the tailor's fabrication guard keeps working)
     """
 
     name: str = ""
+    headline: str = ""
     email: str = ""
     phone: str = ""
     location: str = ""
+    links: list[Link] = Field(default_factory=list)
     summary: str = ""
     experience: list[ExperienceEntry] = Field(default_factory=list)
     education: list[EducationEntry] = Field(default_factory=list)
     skills: list[str] = Field(default_factory=list)
+    skill_groups: list[SkillGroup] = Field(default_factory=list)
     certifications: list[str] = Field(default_factory=list)
+
+    def all_skills(self) -> list[str]:
+        """Every skill on this master, flattened across `skills` + `skill_groups`.
+
+        Used by `source_index` so categorised skills keep producing the same
+        `master:skill:<name>` IDs the tailor already validates against.
+        """
+        seen: set[str] = set()
+        flat: list[str] = []
+        for name in self.skills:
+            if name and name not in seen:
+                seen.add(name)
+                flat.append(name)
+        for group in self.skill_groups:
+            for name in group.items:
+                if name and name not in seen:
+                    seen.add(name)
+                    flat.append(name)
+        return flat
 
 
 class FactItem(BaseModel):
