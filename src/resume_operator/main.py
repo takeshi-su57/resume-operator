@@ -75,6 +75,103 @@ def _score_color(score: float) -> str:
     return "red"
 
 
+def _should_offer_enrich(
+    result: dict[str, object],
+    *,
+    no_enrich: bool,
+    master_path: Path | None,
+) -> bool:
+    """Decide whether to offer an interactive enrichment session.
+
+    Triggers when:
+      - the user hasn't explicitly disabled it via `--no-enrich`
+      - we're running with a master YAML (the only path that supports a
+        meaningful enrichment loop — the legacy PDF path is deprecated)
+      - stdin is a TTY (so we can actually prompt the user)
+      - the optimization actually ran (wasn't skipped due to high ATS score)
+      - the tailor came back thin: kept+reworded items below `enrich_threshold`
+    """
+    import sys
+
+    if no_enrich or master_path is None or not sys.stdin.isatty():
+        return False
+
+    report = result.get("report", {})
+    if isinstance(report, dict) and report.get("optimization_skipped"):
+        return False
+
+    from resume_operator.state import TailoredResume
+
+    tailored = result.get("tailored_resume")
+    if not isinstance(tailored, TailoredResume) or not tailored.items:
+        return False
+
+    threshold = get_settings().enrich_threshold
+    return len(tailored.kept_or_reworded()) < threshold
+
+
+def _run_auto_enrich(*, master_path: Path, facts_path: Path | None, jd_text: str) -> bool:
+    """Pause the pipeline, prompt for an enrichment session, persist accepted items.
+
+    Returns True if any items were appended to the facts bank (so the caller
+    knows to re-invoke the graph), False otherwise.
+    """
+    from rich.prompt import Prompt
+
+    from resume_operator.state import FactsBank
+    from resume_operator.tools.enrich import (
+        assemble_additions,
+        collect_existing_ids,
+        run_interactive_session,
+    )
+    from resume_operator.tools.facts_bank import append_to_facts, load_facts
+    from resume_operator.tools.master_resume import load_master
+
+    console.print(
+        Panel(
+            "Only a few items landed in the tailored resume — your master + "
+            "facts may be thin for this JD. We can grow your facts bank with "
+            "a short interview now (LLM asks grounded questions, you answer "
+            "in your own words, LLM polishes the phrasing).",
+            title="Enrichment available",
+            border_style="yellow",
+        )
+    )
+    if Prompt.ask("Start an enrichment session?", choices=["y", "n"], default="y") != "y":
+        return False
+
+    target_facts = facts_path or DEFAULT_FACTS_PATH
+    master_obj = load_master(master_path)
+    facts_obj = load_facts(target_facts) if target_facts.exists() else FactsBank()
+
+    plan = run_interactive_session(master_obj, facts_obj, jd_text, console=console)
+    if not plan.items:
+        console.print("[yellow]No items accepted — facts_bank unchanged.[/yellow]")
+        return False
+
+    existing_ids = collect_existing_ids(facts_obj)
+    projects, extra_bullets, skills, certifications = assemble_additions(
+        plan, existing_ids=existing_ids
+    )
+    append_to_facts(
+        target_facts,
+        projects=projects,
+        extra_bullets=extra_bullets,
+        skills=skills,
+        certifications=certifications,
+    )
+    console.print(
+        Panel(
+            f"[bold]Wrote:[/bold] {target_facts}\n"
+            f"Projects: +{len(projects)}  |  Extra bullets: +{len(extra_bullets)}  |  "
+            f"Skills: +{len(skills)}  |  Certs: +{len(certifications)}",
+            title="Facts bank updated",
+            border_style="green",
+        )
+    )
+    return True
+
+
 @app.command()
 def run(
     master: Path = typer.Option(
@@ -100,10 +197,24 @@ def run(
             "{parent}/{YYYY-MM-DD}_{slug}/ — never overwrites prior runs."
         ),
     ),
+    no_enrich: bool = typer.Option(
+        False,
+        "--no-enrich",
+        help=(
+            "Skip the auto-enrich interview even if the first tailor pass is thin. "
+            "Use for scripted / headless runs where stdin isn't available."
+        ),
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate inputs without executing"),
 ) -> None:
-    """Run the full resume optimization pipeline."""
+    """Run the full resume optimization pipeline.
+
+    If the first tailoring pass keeps fewer items than the configured
+    `enrich_threshold` (default 6), the CLI offers an interactive interview
+    to grow `facts_bank.yaml`, then re-runs the graph once with the richer
+    inputs. Pass `--no-enrich` to skip that step entirely.
+    """
     _setup_logging(verbose)
     if master is None and resume is None:
         raise typer.BadParameter("Provide either --master (preferred) or --resume.")
@@ -161,6 +272,23 @@ def run(
     graph = build_graph()
     with Status("[bold cyan]Running optimization pipeline...", console=console):
         result = graph.invoke(initial)
+
+    # --- Auto-enrich: if the first tailor pass is thin, offer an interview ---
+    if _should_offer_enrich(result, no_enrich=no_enrich, master_path=master):
+        if _run_auto_enrich(
+            master_path=master,
+            facts_path=resolved_facts,
+            jd_text=jd_text,
+        ):
+            # New items landed in facts_bank.yaml; re-invoke the graph so
+            # load_master → optimize_content picks them up.
+            console.print("[cyan]Re-running optimization with enriched facts...[/cyan]")
+            if resolved_facts is None:
+                # `run_auto_enrich` created data/facts_bank.yaml if it wasn't there.
+                resolved_facts = DEFAULT_FACTS_PATH
+                initial["facts_path"] = str(resolved_facts)
+            with Status("[bold cyan]Re-running pipeline...", console=console):
+                result = graph.invoke(initial)
 
     errors: list[str] = result.get("errors", [])
     if errors:
@@ -349,164 +477,6 @@ def score(
             console.print(f"  [yellow]Gaps:[/yellow] {', '.join(ats.keyword_gaps)}")
     elif not errors:
         console.print("[yellow]No ATS score produced.[/yellow]")
-
-
-@app.command()
-def enrich(
-    master: Path = typer.Option(..., "--master", "-m", help="Path to master_resume.yaml"),
-    facts: Path = typer.Option(
-        Path("data/facts_bank.yaml"),
-        "--facts",
-        "-f",
-        help="Path to facts_bank.yaml (created if missing when items are accepted)",
-    ),
-    job: Path = typer.Option(..., "--job", "-j", help="Path to job description text file"),
-    max_questions: int = typer.Option(
-        5, "--max-questions", "-n", help="Maximum questions per session (1-10)"
-    ),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", help="Print the questions the LLM would ask; no prompting, no writes"
-    ),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
-) -> None:
-    """Interactive enrichment session: LLM asks grounded questions, you answer in
-    your own words, LLM polishes to ATS-ready bullets, accepted items land in
-    facts_bank.yaml.
-    """
-    from rich.prompt import Prompt
-
-    from resume_operator.tools.enrich import (
-        AcceptedItem,
-        SessionPlan,
-        assemble_additions,
-        collect_existing_ids,
-        generate_questions,
-        polish_answer,
-    )
-    from resume_operator.tools.facts_bank import append_to_facts, load_facts
-    from resume_operator.tools.master_resume import load_master
-
-    _setup_logging(verbose)
-    _validate_master(master)
-    _validate_job(job)
-    if max_questions < 1 or max_questions > 10:
-        raise typer.BadParameter("--max-questions must be between 1 and 10")
-
-    master_obj = load_master(master)
-    facts_obj = load_facts(facts) if facts.exists() else None
-    from resume_operator.state import FactsBank
-
-    facts_obj = facts_obj or FactsBank()
-    jd_text = job.read_text(encoding="utf-8")
-
-    # --- Question generation pass ---
-    with Status("[bold cyan]Generating interview questions...", console=console):
-        questions = generate_questions(master_obj, facts_obj, jd_text, n_max=max_questions)
-
-    if not questions:
-        console.print(
-            Panel(
-                "The LLM didn't surface any gap-worthy questions. Either your master "
-                "already covers this JD, or the question-generation call failed "
-                "(run with --verbose to see).",
-                title="No questions",
-                border_style="yellow",
-            )
-        )
-        return
-
-    console.print(
-        Panel(
-            f"[bold]{len(questions)} question(s) to discuss:[/bold]\n\n"
-            + "\n\n".join(
-                f"[cyan]{i + 1}. [{q.area}][/cyan] {q.question}\n   [dim]why: {q.why}[/dim]"
-                for i, q in enumerate(questions)
-            ),
-            title="Enrichment questions",
-            border_style="cyan",
-        )
-    )
-
-    if dry_run:
-        console.print("[yellow]--dry-run: stopping before the interactive loop.[/yellow]")
-        return
-
-    # --- Interactive loop ---
-    plan = SessionPlan()
-    for i, question in enumerate(questions, 1):
-        console.print(
-            f"\n[bold cyan]Question {i}/{len(questions)}:[/bold cyan] {question.question}"
-        )
-        console.print(f"[dim]why: {question.why}[/dim]")
-        answer = Prompt.ask(
-            "[bold]Your answer[/bold] (or 'skip' / 'quit')",
-            default="skip",
-            console=console,
-        )
-        if answer.strip().lower() == "quit":
-            break
-        if answer.strip().lower() == "skip" or not answer.strip():
-            continue
-
-        with Status("[bold cyan]Polishing...", console=console):
-            polished = polish_answer(question, answer, master_obj, jd_text)
-        if polished is None:
-            console.print("[red]Polish step failed — skipping this question.[/red]")
-            continue
-
-        target = f" → [magenta]{polished.bucket}[/magenta]" + (
-            f" (role_id={polished.role_id})" if polished.role_id else ""
-        )
-        console.print(f"\n[bold green]Polished:[/bold green]{target}")
-        console.print(f"  {polished.polished_text}")
-
-        choice = Prompt.ask(
-            "[a]ccept / [e]dit / [r]eject / [s]kip / [q]uit",
-            choices=["a", "e", "r", "s", "q"],
-            default="a",
-            console=console,
-        )
-        if choice == "q":
-            break
-        if choice == "r" or choice == "s":
-            continue
-        final_text = polished.polished_text
-        if choice == "e":
-            edited = Prompt.ask("[bold]Your wording[/bold]", default=final_text, console=console)
-            final_text = edited.strip() or final_text
-        plan.items.append(
-            AcceptedItem(
-                text=final_text,
-                bucket=polished.bucket,
-                role_id=polished.role_id,
-            )
-        )
-
-    # --- Persistence ---
-    if not plan.items:
-        console.print("[yellow]No items accepted — facts_bank.yaml unchanged.[/yellow]")
-        return
-
-    existing_ids = collect_existing_ids(facts_obj)
-    projects, extra_bullets, skills, certifications = assemble_additions(
-        plan, existing_ids=existing_ids
-    )
-    append_to_facts(
-        facts,
-        projects=projects,
-        extra_bullets=extra_bullets,
-        skills=skills,
-        certifications=certifications,
-    )
-    console.print(
-        Panel(
-            f"[bold]Wrote:[/bold] {facts}\n"
-            f"Projects: +{len(projects)}  |  Extra bullets: +{len(extra_bullets)}  |  "
-            f"Skills: +{len(skills)}  |  Certs: +{len(certifications)}",
-            title="Facts bank updated",
-            border_style="green",
-        )
-    )
 
 
 if __name__ == "__main__":
