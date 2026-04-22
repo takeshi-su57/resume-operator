@@ -121,6 +121,12 @@ class TestBootstrapCommand:
     ) -> None:
         """Bootstrap must not invoke the full graph — that would burn LLM calls on
         ats_score / analyze_gaps / optimize_content the user never asked for."""
+        from resume_operator.state import (
+            ExperienceBullet,
+            ExperienceEntry,
+            ResumeMaster,
+        )
+
         fake_pdf = tmp_path / "resume.pdf"
         fake_pdf.touch()
         out = tmp_path / "master.yaml"
@@ -129,21 +135,34 @@ class TestBootstrapCommand:
             "resume": ResumeData(
                 name="Jane Smith",
                 email="jane@example.com",
+                skills=["Python", "AWS"],
+            ),
+            "master": ResumeMaster(
+                name="Jane Smith",
+                email="jane@example.com",
                 experience=[
-                    {
-                        "role": "Engineer",
-                        "company": "Corp",
-                        "start_date": "2020",
-                        "end_date": "present",
-                        "description": "- Built APIs\n- Shipped to AWS",
-                    }
+                    ExperienceEntry(
+                        id="exp-1",
+                        role="Engineer",
+                        company="Corp",
+                        start_date="2020",
+                        end_date="present",
+                        bullets=[
+                            ExperienceBullet(id="exp-1-b1", text="Built APIs"),
+                            ExperienceBullet(id="exp-1-b2", text="Shipped to AWS"),
+                        ],
+                    )
                 ],
                 skills=["Python", "AWS"],
             ),
             "errors": [],
         }
 
-        result = runner.invoke(app, ["bootstrap", "--resume", str(fake_pdf), "--output", str(out)])
+        # `--no-interview` keeps the command headless so the test doesn't block on prompts.
+        result = runner.invoke(
+            app,
+            ["bootstrap", "--resume", str(fake_pdf), "--output", str(out), "--no-interview"],
+        )
 
         assert result.exit_code == 0, result.output
         mock_parse.assert_called_once()
@@ -155,7 +174,8 @@ class TestBootstrapCommand:
 
         written = yaml.safe_load(out.read_text(encoding="utf-8"))
         assert written["name"] == "Jane Smith"
-        # Bullets round-trip: dense newline description → list of ExperienceBullet entries.
+        # The master carries the ExperienceEntry's stable-ID bullets straight
+        # through to the YAML — no round-trip through ResumeData's dict shape.
         assert len(written["experience"][0]["bullets"]) == 2
 
 

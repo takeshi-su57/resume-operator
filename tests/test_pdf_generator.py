@@ -398,6 +398,45 @@ class TestSeniorFormatFields:
         # Contact line should land directly after name.
         assert text.index("Jane Smith") < text.index("jane@example.com")
 
+    def test_tailored_headline_wins_over_master_headline(self, tmp_path: Path) -> None:
+        """#70: when the tailor emits a tailored_headline, it replaces master.headline.
+
+        Both shouldn't render — the page would have two taglines. Tailored wins
+        because it's per-JD and the master one is a static fallback."""
+        master = self._base_master()
+        master.headline = "STATIC MASTER TAGLINE — SHOULD-NOT-APPEAR"
+        tailored = TailoredResume(
+            tailored_headline="Senior Backend Engineer · 10+ years · Python",
+            items=[
+                TailoredItem(source_id="master:exp-1-b1", action="keep", original_text="x"),
+            ],
+        )
+        output = tmp_path / "resume.pdf"
+        generate_pdf(master, tailored, output)
+
+        with fitz.open(output) as doc:
+            text = "\n".join(page.get_text() for page in doc)
+        assert "Senior Backend Engineer · 10+ years · Python" in text
+        assert "SHOULD-NOT-APPEAR" not in text
+
+    def test_master_headline_fallback_when_no_tailored(self, tmp_path: Path) -> None:
+        """When the tailor doesn't emit a headline, the static master.headline
+        still renders — useful for score-only runs."""
+        master = self._base_master()
+        master.headline = "Fallback Tagline · Static"
+        tailored = TailoredResume(
+            tailored_headline="",  # explicitly empty
+            items=[
+                TailoredItem(source_id="master:exp-1-b1", action="keep", original_text="x"),
+            ],
+        )
+        output = tmp_path / "resume.pdf"
+        generate_pdf(master, tailored, output)
+
+        with fitz.open(output) as doc:
+            text = "\n".join(page.get_text() for page in doc)
+        assert "Fallback Tagline · Static" in text
+
     def test_links_render_as_second_contact_line(self, tmp_path: Path) -> None:
         master = self._base_master()
         master.links = [
