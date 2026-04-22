@@ -75,6 +75,7 @@ class FactItem(BaseModel):
     id: str
     text: str
     role_id: str = ""  # optional: links to an `ExperienceEntry.id` for spliceable bullets
+    source: str = ""  # optional: e.g. "enrich 2026-04-21" — where this item came from
 
 
 class FactsBank(BaseModel):
