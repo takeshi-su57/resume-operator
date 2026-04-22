@@ -92,6 +92,10 @@ After `ats_score`, a routing function checks the score against `ATS_SKIP_THRESHO
 
 `generate_pdf` is a pure function of `(ResumeMaster, TailoredResume, FactsBank?, template)` (#027). The renderer groups tailored items by `kind` (summary, experience-bullet, project, education, skill, certification), splices facts-bank `extra-bullet[role-id]` items under their target role, and lays out the page deterministically — no paragraph-splitting on LLM whitespace.
 
+**Summary handling (#66)**: `TailoredResume.tailored_summary` is a dedicated JD-crafted 2-3 sentence opener the optimizer writes fresh for every run. When non-empty, the renderer uses it for the SUMMARY section instead of a kept/reworded `master:summary` item. That avoids a double-render and lets the summary pull harder toward the JD than a per-item reword would.
+
+**Unicode sanitization (#66)**: every string that reaches the renderer passes through `_sanitize_for_pdf` — a boundary-layer that translates exotic Unicode (arrows `→`, non-breaking hyphens `‑`, curly quotes `'"`, horizontal ellipsis `…`) to ASCII and strips zero-width characters. Helvetica (the built-in font) can't render those glyphs, so without sanitization they come out as black `.notdef` boxes. `tailored.yaml` and `facts_bank.yaml` keep the LLM's original text; only the PDF text stream is normalized.
+
 Templates are configured via `RESUME_TEMPLATE` (`default | compact | modern`); only `default` is implemented today, unknown values fall back to default with a warning.
 
 The `default` template targets both audiences: ATS parsers (single-column selectable text, standard fonts, no images or layout tables) and recruiters' six-second scan (name banner + thin accent rule, uppercase section labels with a pale rule underneath, role header with right-aligned dates on the same line, hanging-indent bullets, one muted deep-blue accent used sparingly).

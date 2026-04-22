@@ -13,7 +13,11 @@ from resume_operator.state import (
     TailoredItem,
     TailoredResume,
 )
-from resume_operator.tools.pdf_generator import generate_pdf
+from resume_operator.tools.pdf_generator import (
+    _default_styles,
+    _sanitize_for_pdf,
+    generate_pdf,
+)
 
 
 @pytest.fixture()
@@ -199,3 +203,130 @@ class TestGeneratePdf:
             text = "\n".join(page.get_text() for page in doc)
         assert "Kept bullet" in text
         assert "DROPPED-DO-NOT-RENDER" not in text
+
+
+class TestSanitizeForPdf:
+    def test_translates_exotic_dashes_and_arrows(self) -> None:
+        # non-breaking hyphen, en-dash, rightwards arrow, minus sign
+        assert _sanitize_for_pdf("high‑performance") == "high-performance"
+        assert _sanitize_for_pdf("Node.js 14 → 18") == "Node.js 14 -> 18"
+        assert _sanitize_for_pdf("2020 – present") == "2020 - present"
+        assert _sanitize_for_pdf("cost − 5%") == "cost - 5%"
+
+    def test_translates_curly_quotes_and_ellipsis(self) -> None:
+        assert _sanitize_for_pdf("it’s a “test”…") == 'it\'s a "test"...'
+
+    def test_strips_zero_width_characters(self) -> None:
+        # Exactly the garbage Bruno's first enrich session produced.
+        assert _sanitize_for_pdf("Designed​    ​ thing") == "Designed thing"
+        assert _sanitize_for_pdf("before­after") == "beforeafter"  # soft hyphen
+        assert _sanitize_for_pdf("﻿BOM-prefixed") == "BOM-prefixed"
+
+    def test_collapses_whitespace_runs(self) -> None:
+        assert _sanitize_for_pdf("a     b\t\tc") == "a b c"
+
+    def test_preserves_newlines(self) -> None:
+        # Intentional newlines (paragraph breaks) survive.
+        assert _sanitize_for_pdf("line one\nline two") == "line one\nline two"
+
+    def test_empty_string_passthrough(self) -> None:
+        assert _sanitize_for_pdf("") == ""
+
+    def test_preserves_standard_ascii(self) -> None:
+        assert _sanitize_for_pdf("hello, world! 50%") == "hello, world! 50%"
+
+
+class TestTypographicHierarchy:
+    """Issue #66 introduced a clearer size hierarchy — pin it so future edits
+    don't silently flatten the page again."""
+
+    def test_section_header_larger_than_body(self) -> None:
+        styles = _default_styles()
+        assert styles["section"].fontSize > styles["body"].fontSize
+
+    def test_role_title_between_section_and_body(self) -> None:
+        styles = _default_styles()
+        assert styles["section"].fontSize >= styles["role_title"].fontSize
+        assert styles["role_title"].fontSize > styles["body"].fontSize
+
+    def test_name_is_the_largest_tier(self) -> None:
+        styles = _default_styles()
+        name = styles["name"].fontSize
+        other_sizes = [
+            styles["section"].fontSize,
+            styles["role_title"].fontSize,
+            styles["body"].fontSize,
+            styles["contact"].fontSize,
+        ]
+        assert all(name > s for s in other_sizes)
+
+
+class TestTailoredSummaryRender:
+    def test_tailored_summary_rendered_when_present(
+        self, tmp_path: Path, master: ResumeMaster
+    ) -> None:
+        summary = "Backend-leaning staff engineer with 8+ years shipping Node.js on AWS."
+        tailored = TailoredResume(
+            tailored_summary=summary,
+            items=[
+                TailoredItem(
+                    source_id="master:exp-1-b1", action="keep", original_text="Led backend team"
+                ),
+            ],
+        )
+        output = tmp_path / "resume.pdf"
+        generate_pdf(master, tailored, output)
+
+        with fitz.open(output) as doc:
+            text = "\n".join(page.get_text() for page in doc)
+
+        assert "Backend-leaning staff engineer" in text
+
+    def test_tailored_summary_replaces_master_summary(
+        self, tmp_path: Path, master: ResumeMaster
+    ) -> None:
+        """If both a tailored_summary AND a kept master:summary are present, only
+        the tailored one should render — we don't want the SUMMARY section to
+        show both."""
+        tailored = TailoredResume(
+            tailored_summary="FRESH JD-TAILORED SUMMARY.",
+            items=[
+                TailoredItem(
+                    source_id="master:summary",
+                    action="keep",
+                    original_text="OLD MASTER SUMMARY SHOULD-NOT-RENDER",
+                ),
+                TailoredItem(source_id="master:exp-1-b1", action="keep", original_text="A bullet"),
+            ],
+        )
+        output = tmp_path / "resume.pdf"
+        generate_pdf(master, tailored, output)
+
+        with fitz.open(output) as doc:
+            text = "\n".join(page.get_text() for page in doc)
+
+        assert "FRESH JD-TAILORED SUMMARY." in text
+        assert "SHOULD-NOT-RENDER" not in text
+
+    def test_sanitizer_applied_to_tailored_summary(
+        self, tmp_path: Path, master: ResumeMaster
+    ) -> None:
+        """Even if the LLM slips an exotic char into the summary, the PDF
+        shouldn't show a black .notdef box."""
+        tailored = TailoredResume(
+            tailored_summary="High‑performance backend engineer → cloud native.",
+            items=[
+                TailoredItem(source_id="master:exp-1-b1", action="keep", original_text="A bullet"),
+            ],
+        )
+        output = tmp_path / "resume.pdf"
+        generate_pdf(master, tailored, output)
+
+        with fitz.open(output) as doc:
+            text = "\n".join(page.get_text() for page in doc)
+
+        assert "High-performance" in text
+        assert "-> cloud" in text
+        # Raw exotic chars must not survive into the rendered text stream.
+        assert "‑" not in text
+        assert "→" not in text

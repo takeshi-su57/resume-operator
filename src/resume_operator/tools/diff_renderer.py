@@ -24,6 +24,11 @@ def render_diff(tailored: TailoredResume, index: SourceIndex) -> str:
 
     lines: list[str] = ["# Tailoring Diff", ""]
 
+    if tailored.tailored_summary:
+        lines.append("## Tailored Summary (fresh, JD-crafted)")
+        lines.append(tailored.tailored_summary)
+        lines.append("")
+
     if tailored.notes:
         lines.append("## Strategy Notes")
         lines.extend(f"- {note}" for note in tailored.notes)

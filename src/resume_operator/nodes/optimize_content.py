@@ -39,6 +39,7 @@ class TailoredItemLLM(BaseModel):
 
 
 class TailoredResumeLLMOutput(BaseModel):
+    tailored_summary: str = ""  # fresh JD-crafted SUMMARY text — not sourced from the items list
     items: list[TailoredItemLLM] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
 
@@ -81,18 +82,23 @@ def optimize_content(state: ResumeOptimizerState) -> dict[str, Any]:
         logger.error(msg)
         errors.append(msg)
 
-    tailored = TailoredResume(items=validated_items, notes=list(parsed.notes))
+    tailored = TailoredResume(
+        items=validated_items,
+        notes=list(parsed.notes),
+        tailored_summary=parsed.tailored_summary.strip(),
+    )
     optimized_legacy = _project_to_sections(tailored, index)
 
     logger.info(
         "optimize_content: completed — items=%d (kept=%d, reworded=%d, dropped=%d), "
-        "fabricated_rejected=%d, notes=%d",
+        "fabricated_rejected=%d, notes=%d, summary=%s",
         len(tailored.items),
         sum(1 for i in tailored.items if i.action == "keep"),
         sum(1 for i in tailored.items if i.action == "reword"),
         sum(1 for i in tailored.items if i.action == "drop"),
         len(rejected),
         len(tailored.notes),
+        "yes" if tailored.tailored_summary else "no",
     )
 
     result: dict[str, Any] = {
@@ -142,12 +148,18 @@ def _project_to_sections(tailored: TailoredResume, index: SourceIndex) -> Optimi
         "skills": [],
         "education": [],
     }
+    # Tailored summary wins over any kept `master:summary` item (issue #66).
+    if tailored.tailored_summary:
+        buckets["summary"].append(tailored.tailored_summary)
     for item in tailored.kept_or_reworded():
         text = item.new_text or item.original_text
         entry = index.get(item.source_id)
         if entry is None:
             continue
         if entry.kind == "summary":
+            if tailored.tailored_summary:
+                # Skip — the dedicated field already carried the summary above.
+                continue
             buckets["summary"].append(text)
         elif entry.kind in {"experience-header", "experience-bullet"} or entry.kind.startswith(
             "extra-bullet"

@@ -2,15 +2,28 @@
 
 OPTIMIZE_CONTENT = """You are tailoring a candidate's resume for a specific job.
 
-Your job is a *per-item* decision over a menu of source items. You MAY NOT
-invent new bullets or skills — you may only keep, reword, or drop existing
-ones from the menu below.
+Your job has two parts:
+
+### Part 1 — Tailored summary
+
+Write a fresh 2-3 sentence SUMMARY opener for this resume, weighted toward
+the JD below. Rules:
+- Grounded ONLY in facts derivable from the sources menu (years of experience,
+  tech stacks, role seniority). Do NOT invent metrics, headcount, tech, or
+  scope that isn't in the menu.
+- Active voice, specific, JD-aligned. Avoid filler like "results-driven" or
+  "passionate about X".
+- Return as the `tailored_summary` field of the output.
+- Do NOT also include `master:summary` in the `items` list below — the
+  dedicated field owns the summary.
+
+### Part 2 — Per-item decisions
+
+For every other master/facts item, decide keep / reword / drop. Every item
+you reference MUST use the exact `source_id` from the menu below. An output
+item whose `source_id` is not in this menu will be rejected.
 
 === SOURCES MENU ===
-Every item you reference in your output MUST use the exact `source_id` from
-this menu. An output item whose `source_id` is not in this menu will be
-rejected.
-
 {source_menu}
 
 === JOB DESCRIPTION ===
@@ -19,24 +32,31 @@ rejected.
 === GAP ANALYSIS (from earlier pass) ===
 {gap_analysis}
 
-=== YOUR TASK ===
-Return a list of `TailoredItem` decisions covering the items that belong in
-the tailored output. Each item:
+### Output schema
 
-- `source_id` — exact match to a menu entry above
-- `action` — one of:
-  - `keep`   → include the source text unchanged
-  - `reword` → include, but rephrased for this JD; fill `new_text`
-  - `drop`   → the item was considered but excluded from the final resume
-- `original_text` — echo the source text so the diff reader has context
-- `new_text` — only when action is `reword`; otherwise leave empty
+Return a `TailoredResumeLLMOutput` with:
+- `tailored_summary` — the fresh summary from Part 1 (string)
+- `items` — list of per-item decisions (see below); do NOT include a
+  `master:summary` entry here.
+- `notes` — short free-form strategy notes explaining what you emphasized,
+  what you downplayed, and why.
 
-Include `drop` decisions for items from the master that you chose NOT to
-include — the reader wants to see what was cut, not just what was kept.
+Each `item`:
+- `source_id` — exact menu match
+- `action` — `keep` (include unchanged), `reword` (include with new phrasing),
+  or `drop` (considered but excluded from output)
+- `original_text` — echo the source for context
+- `new_text` — only when action is `reword`
 
-Pull in items from the facts bank (source_id starting with `facts:`) only
-when they strengthen the match for this specific JD.
+Pull in `facts:*` items only when they strengthen the match for this
+specific JD.
 
-Add short free-form `notes` explaining the overall strategy (what you
-emphasized, what you downplayed, and why).
+### Output style
+
+Use plain ASCII punctuation in `tailored_summary` and `new_text`:
+- Hyphens (`-`), not en-dashes or non-breaking hyphens
+- Straight quotes (`"` and `'`), not curly
+- `->` instead of `→`; `...` instead of `…`
+The rendered PDF's default font doesn't carry those exotic glyphs and would
+render them as black boxes; keep the wording portable.
 """

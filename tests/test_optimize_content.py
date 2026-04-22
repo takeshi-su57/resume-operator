@@ -12,8 +12,8 @@ from resume_operator.nodes.optimize_content import (
 from resume_operator.state import ResumeOptimizerState
 
 VALID_OUTPUT = TailoredResumeLLMOutput(
+    tailored_summary="Senior engineer with 8+ years shipping Python/AWS backends.",
     items=[
-        TailoredItemLLM(source_id="master:summary", action="keep", original_text="summary text"),
         TailoredItemLLM(
             source_id="master:exp-1-b1",
             action="reword",
@@ -49,11 +49,15 @@ class TestOptimizeContent:
         result = optimize_content(sample_state)
 
         assert "tailored_resume" in result
-        assert len(result["tailored_resume"].items) == 5
-        assert result["tailored_resume"].items[1].action == "reword"
-        assert "Kubernetes-native" in result["tailored_resume"].items[1].new_text
-        # Legacy projection still populates sections for back-compat.
+        assert len(result["tailored_resume"].items) == 4
+        assert result["tailored_resume"].items[0].action == "reword"
+        assert "Kubernetes-native" in result["tailored_resume"].items[0].new_text
+        # Tailored summary round-trips (issue #66).
+        assert result["tailored_resume"].tailored_summary.startswith("Senior engineer")
+        # Legacy projection still populates sections for back-compat, and the
+        # tailored_summary wins over any kept master:summary.
         assert "optimized_resume" in result
+        assert result["optimized_resume"].sections["summary"].startswith("Senior engineer")
         assert result["optimized_resume"].sections["experience"].startswith("- ")
         assert result["optimized_resume"].sections["skills"] == "Python"
 

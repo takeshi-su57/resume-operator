@@ -45,6 +45,71 @@ _RULE_GREY = HexColor("#CBD5E0")
 _MARGIN = 0.6 * inch
 
 
+# --- Unicode sanitization -------------------------------------------------
+#
+# Helvetica (ReportLab's built-in Type-1 font) ships with Adobe Standard
+# Encoding — roughly Latin-1 plus a handful of punctuation. When the LLM
+# emits chars outside that coverage (arrows, non-breaking hyphens, curly
+# quotes, zero-width spaces…), ReportLab renders the `.notdef` glyph — a
+# black filled box. Translate the common offenders to ASCII equivalents
+# before the text hits the renderer.
+
+_TRANSLATE: dict[int, str] = {
+    # Dashes
+    0x2011: "-",  # non-breaking hyphen
+    0x2013: "-",  # en dash
+    0x2212: "-",  # minus sign
+    # Arrows
+    0x2192: "->",  # rightwards arrow
+    0x2190: "<-",  # leftwards arrow
+    0x21D2: "=>",  # rightwards double arrow
+    0x21D0: "<=",  # leftwards double arrow
+    0x2194: "<->",  # left-right arrow
+    # Quotes
+    0x2018: "'",  # left single quote
+    0x2019: "'",  # right single quote / apostrophe
+    0x201A: "'",  # single low-9 quote
+    0x201C: '"',  # left double quote
+    0x201D: '"',  # right double quote
+    0x201E: '"',  # double low-9 quote
+    # Ellipsis + punctuation
+    0x2026: "...",  # horizontal ellipsis
+    # Whitespace
+    0x00A0: " ",  # non-breaking space
+}
+
+# Invisible chars to strip outright — they carry no rendered glyph and often
+# end up as `.notdef` boxes when the LLM slips them in.
+_STRIP_CHARS = "".join(
+    chr(c)
+    for c in (
+        0x200B,  # zero-width space
+        0x200C,  # zero-width non-joiner
+        0x200D,  # zero-width joiner
+        0x2060,  # word joiner
+        0xFEFF,  # BOM / zero-width no-break space
+        0x00AD,  # soft hyphen
+    )
+)
+_STRIP_TABLE: dict[int, None] = {ord(c): None for c in _STRIP_CHARS}
+
+
+def _sanitize_for_pdf(text: str) -> str:
+    """Translate exotic Unicode to ASCII and strip invisible/zero-width chars.
+
+    Runs at the renderer boundary. `tailored.yaml` / `facts_bank.yaml` keep the
+    LLM's original text; only the PDF text stream is normalized.
+    """
+    if not text:
+        return text
+    # Strip the invisible offenders first so subsequent whitespace collapse works.
+    cleaned = text.translate(_STRIP_TABLE).translate(_TRANSLATE)
+    # Collapse any run of whitespace (including the non-breaking space we just
+    # converted) down to a single space, without touching deliberate newlines.
+    lines = [" ".join(line.split()) for line in cleaned.splitlines()]
+    return "\n".join(lines).strip()
+
+
 def generate_pdf(
     master: ResumeMaster,
     tailored: TailoredResume,
@@ -127,12 +192,22 @@ def _build_render_plan(
     index = build_source_index(master, facts)
     plan = _RenderPlan()
 
+    # Tailored summary (issue #66) is the fresh JD-crafted opener. When set, it
+    # wins over any kept `master:summary` item — the two would otherwise render
+    # twice in the SUMMARY section.
+    if tailored.tailored_summary:
+        plan.summary = tailored.tailored_summary
+
     for item in tailored.kept_or_reworded():
         entry = index.get(item.source_id)
         kind = entry.kind if entry else _infer_kind(item)
         text = _text_for(item)
 
         if kind == "summary":
+            # If the optimizer populated `tailored_summary`, that already filled
+            # plan.summary; skip here to avoid duplicate rendering.
+            if tailored.tailored_summary:
+                continue
             plan.summary = text
         elif kind == "experience-bullet":
             role_id = _role_id_from_bullet_source(item.source_id)
@@ -185,7 +260,7 @@ def _render_default(master: ResumeMaster, plan: _RenderPlan, frame_width: float)
 
     # --- Header: name banner + accent rule + contact line ---
     if master.name:
-        flowables.append(Paragraph(escape(master.name), styles["name"]))
+        flowables.append(Paragraph(escape(_sanitize_for_pdf(master.name)), styles["name"]))
     flowables.append(
         HRFlowable(
             width="100%",
@@ -195,14 +270,16 @@ def _render_default(master: ResumeMaster, plan: _RenderPlan, frame_width: float)
             spaceAfter=4,
         )
     )
-    contact_parts = [p for p in (master.email, master.phone, master.location) if p]
+    contact_parts = [
+        _sanitize_for_pdf(p) for p in (master.email, master.phone, master.location) if p
+    ]
     if contact_parts:
         flowables.append(Paragraph(escape("  ·  ".join(contact_parts)), styles["contact"]))
 
     # --- Summary ---
     if plan.summary:
         flowables.extend(_section_header("SUMMARY", frame_width))
-        flowables.append(Paragraph(escape(plan.summary), styles["body"]))
+        flowables.append(Paragraph(escape(_sanitize_for_pdf(plan.summary)), styles["body"]))
 
     # --- Experience (roles in master order) ---
     if plan.experience_by_role:
@@ -224,7 +301,9 @@ def _render_default(master: ResumeMaster, plan: _RenderPlan, frame_width: float)
         for virtual_id, bullets in plan.experience_by_role.items():
             if virtual_id in seen:
                 continue
-            flowables.append(Paragraph(escape(virtual_id.upper()), styles["role_title"]))
+            flowables.append(
+                Paragraph(escape(_sanitize_for_pdf(virtual_id.upper())), styles["role_title"])
+            )
             for bullet in bullets:
                 flowables.append(Paragraph(_bullet(bullet), styles["bullet"]))
             flowables.append(Spacer(1, 0.05 * inch))
@@ -232,13 +311,14 @@ def _render_default(master: ResumeMaster, plan: _RenderPlan, frame_width: float)
     # --- Skills ---
     if plan.skills:
         flowables.extend(_section_header("SKILLS", frame_width))
-        flowables.append(Paragraph(escape("  ·  ".join(plan.skills)), styles["body"]))
+        sanitized_skills = [_sanitize_for_pdf(s) for s in plan.skills]
+        flowables.append(Paragraph(escape("  ·  ".join(sanitized_skills)), styles["body"]))
 
     # --- Education ---
     if plan.education:
         flowables.extend(_section_header("EDUCATION", frame_width))
         for entry in plan.education:
-            flowables.append(Paragraph(escape(entry), styles["body"]))
+            flowables.append(Paragraph(escape(_sanitize_for_pdf(entry)), styles["body"]))
 
     # --- Certifications ---
     if plan.certifications:
@@ -251,14 +331,25 @@ def _render_default(master: ResumeMaster, plan: _RenderPlan, frame_width: float)
 
 
 def _default_styles() -> dict[str, ParagraphStyle]:
+    """Typographic hierarchy for the `default` template.
+
+    Sizes create a clear tier structure so the recruiter's eye lands on
+    landmarks in the right order:
+      Name (24pt)  →  Section headers (12pt)  →  Role titles (11pt)  →
+      Body / bullets (10pt)  →  Role dates / contact (9.5pt, muted)
+
+    Issue #66 tightened this: previously section headers and role titles
+    were both 10.5pt — same size as bullets — which made the page read
+    flat. Splitting them into distinct tiers is the highest-leverage fix.
+    """
     base = getSampleStyleSheet()
     return {
         "name": ParagraphStyle(
             "Name",
             parent=base["Heading1"],
             fontName="Helvetica-Bold",
-            fontSize=22,
-            leading=24,
+            fontSize=24,
+            leading=26,
             textColor=HexColor("#1A202C"),
             spaceAfter=0,
             alignment=0,
@@ -270,26 +361,26 @@ def _default_styles() -> dict[str, ParagraphStyle]:
             fontSize=9.5,
             leading=12,
             textColor=_MUTED_GREY,
-            spaceAfter=6,
+            spaceAfter=8,
         ),
         "section": ParagraphStyle(
             "Section",
             parent=base["Heading2"],
             fontName="Helvetica-Bold",
-            fontSize=10.5,
-            leading=12,
+            fontSize=12,
+            leading=14,
             textColor=_ACCENT,
-            spaceBefore=8,
+            spaceBefore=12,
             spaceAfter=0,
         ),
         "role_title": ParagraphStyle(
             "RoleTitle",
             parent=base["BodyText"],
             fontName="Helvetica-Bold",
-            fontSize=10.5,
-            leading=13,
+            fontSize=11,
+            leading=14,
             textColor=HexColor("#1A202C"),
-            spaceBefore=0,
+            spaceBefore=2,
             spaceAfter=0,
         ),
         "role_dates": ParagraphStyle(
@@ -297,7 +388,7 @@ def _default_styles() -> dict[str, ParagraphStyle]:
             parent=base["BodyText"],
             fontName="Helvetica",
             fontSize=9.5,
-            leading=13,
+            leading=14,
             textColor=_MUTED_GREY,
             alignment=2,  # right
         ),
@@ -345,8 +436,8 @@ def _section_header(title: str, frame_width: float) -> list[object]:
 
 def _role_row(role: object, styles: dict[str, ParagraphStyle], frame_width: float) -> Table:
     """Two-column row: role + company on the left, dates/location right-aligned."""
-    left = Paragraph(escape(_role_header_text(role)), styles["role_title"])
-    right = Paragraph(escape(_role_meta_text(role)), styles["role_dates"])
+    left = Paragraph(escape(_sanitize_for_pdf(_role_header_text(role))), styles["role_title"])
+    right = Paragraph(escape(_sanitize_for_pdf(_role_meta_text(role))), styles["role_dates"])
 
     # 65 / 35 split — date strings are short, role/company is the prime real estate.
     left_w = frame_width * 0.65
@@ -368,7 +459,7 @@ def _role_row(role: object, styles: dict[str, ParagraphStyle], frame_width: floa
 
 def _bullet(text: str) -> str:
     """Format bullet content as `• <text>` so the glyph and content extract on one line."""
-    return f"• {escape(text)}"
+    return f"• {escape(_sanitize_for_pdf(text))}"
 
 
 def _role_header_text(role: object) -> str:

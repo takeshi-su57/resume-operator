@@ -154,10 +154,18 @@ class TailoredItem(BaseModel):
 
 
 class TailoredResume(BaseModel):
-    """Structured tailored output — a list of per-item decisions, not free-form text."""
+    """Structured tailored output — a list of per-item decisions, not free-form text.
+
+    `tailored_summary` is a dedicated JD-crafted 2-3 sentence opener (issue #66).
+    When non-empty, the renderer uses it for the SUMMARY section instead of a
+    kept/reworded `master:summary` item — recruiters read the summary first,
+    so it deserves a fresh pass targeted at *this* JD rather than a rephrase
+    of the generic master summary.
+    """
 
     items: list[TailoredItem] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
+    tailored_summary: str = ""
 
     def kept_or_reworded(self) -> list[TailoredItem]:
         return [i for i in self.items if i.action in {"keep", "reword"}]
