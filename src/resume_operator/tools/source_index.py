@@ -65,7 +65,9 @@ def build_source_index(master: ResumeMaster, facts: FactsBank | None) -> SourceI
         text = f"{edu.degree} — {edu.school}".strip(" —")
         _add(idx, f"master:{edu.id}", text, "education")
 
-    for skill in master.skills:
+    # #68: skill groups and the legacy flat list both get flattened into the
+    # index so tailor fabrication-guard IDs stay `master:skill:<name>` either way.
+    for skill in master.all_skills():
         _add(idx, f"master:skill:{skill}", skill, "skill")
 
     for cert in master.certifications:

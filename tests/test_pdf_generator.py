@@ -9,7 +9,9 @@ from resume_operator.state import (
     EducationEntry,
     ExperienceBullet,
     ExperienceEntry,
+    Link,
     ResumeMaster,
+    SkillGroup,
     TailoredItem,
     TailoredResume,
 )
@@ -330,3 +332,150 @@ class TestTailoredSummaryRender:
         # Raw exotic chars must not survive into the rendered text stream.
         assert "‑" not in text
         assert "→" not in text
+
+
+class TestSeniorFormatFields:
+    """Coverage for the four #68 additions — headline, links, tech line, grouped skills.
+
+    All four fields are optional on `ResumeMaster`; an older YAML without any of
+    them still renders through the legacy fallbacks. The tests exercise both the
+    populated and empty paths.
+    """
+
+    def _base_master(self) -> ResumeMaster:
+        return ResumeMaster(
+            name="Jane Smith",
+            email="jane@example.com",
+            experience=[
+                ExperienceEntry(
+                    id="exp-1",
+                    role="Senior Engineer",
+                    company="Acme",
+                    bullets=[ExperienceBullet(id="exp-1-b1", text="Shipped it")],
+                )
+            ],
+            education=[EducationEntry(id="edu-1", degree="BS CS", school="State U")],
+            skills=["Python", "AWS"],
+        )
+
+    def _base_tailored(self) -> TailoredResume:
+        return TailoredResume(
+            items=[
+                TailoredItem(
+                    source_id="master:exp-1-b1", action="keep", original_text="Shipped it"
+                ),
+                TailoredItem(
+                    source_id="master:skill:Python", action="keep", original_text="Python"
+                ),
+                TailoredItem(source_id="master:skill:AWS", action="keep", original_text="AWS"),
+            ]
+        )
+
+    def test_headline_renders_under_name(self, tmp_path: Path) -> None:
+        master = self._base_master()
+        master.headline = "Senior Engineer · Founding Engineer · Ex-Google"
+        output = tmp_path / "resume.pdf"
+        generate_pdf(master, self._base_tailored(), output)
+
+        with fitz.open(output) as doc:
+            text = "\n".join(page.get_text() for page in doc)
+        assert "Senior Engineer · Founding Engineer · Ex-Google" in text
+        # Headline sits between name and contact in the rendered text stream.
+        name_pos = text.index("Jane Smith")
+        headline_pos = text.index("Ex-Google")
+        contact_pos = text.index("jane@example.com")
+        assert name_pos < headline_pos < contact_pos
+
+    def test_empty_headline_silent(self, tmp_path: Path) -> None:
+        """No headline means no headline line rendered — not even an empty paragraph."""
+        master = self._base_master()
+        assert master.headline == ""  # default
+        output = tmp_path / "resume.pdf"
+        generate_pdf(master, self._base_tailored(), output)
+
+        with fitz.open(output) as doc:
+            text = "\n".join(page.get_text() for page in doc)
+        # Contact line should land directly after name.
+        assert text.index("Jane Smith") < text.index("jane@example.com")
+
+    def test_links_render_as_second_contact_line(self, tmp_path: Path) -> None:
+        master = self._base_master()
+        master.links = [
+            Link(label="GitHub", url="github.com/jsmith"),
+            Link(label="LinkedIn", url="linkedin.com/in/jane-smith"),
+        ]
+        output = tmp_path / "resume.pdf"
+        generate_pdf(master, self._base_tailored(), output)
+
+        with fitz.open(output) as doc:
+            text = "\n".join(page.get_text() for page in doc)
+        assert "GitHub: github.com/jsmith" in text
+        assert "LinkedIn: linkedin.com/in/jane-smith" in text
+
+    def test_tech_line_renders_after_bullets(self, tmp_path: Path) -> None:
+        master = self._base_master()
+        master.experience[0].tech = ["Python", "Django", "Docker"]
+        output = tmp_path / "resume.pdf"
+        generate_pdf(master, self._base_tailored(), output)
+
+        with fitz.open(output) as doc:
+            text = "\n".join(page.get_text() for page in doc)
+        # The `Tech:` line must appear in the rendered text and come after
+        # the role bullet, not before.
+        assert "Tech: Python, Django, Docker" in text
+        bullet_pos = text.index("Shipped it")
+        tech_pos = text.index("Tech: Python, Django, Docker")
+        assert bullet_pos < tech_pos
+
+    def test_empty_tech_silent(self, tmp_path: Path) -> None:
+        master = self._base_master()
+        assert master.experience[0].tech == []
+        output = tmp_path / "resume.pdf"
+        generate_pdf(master, self._base_tailored(), output)
+
+        with fitz.open(output) as doc:
+            text = "\n".join(page.get_text() for page in doc)
+        assert "Tech:" not in text
+
+    def test_skill_groups_render_categorised(self, tmp_path: Path) -> None:
+        master = self._base_master()
+        master.skill_groups = [
+            SkillGroup(category="Languages", items=["Python", "Go"]),
+            SkillGroup(category="Cloud", items=["AWS", "Docker"]),
+        ]
+        master.skills = ["Python", "Go", "AWS", "Docker"]  # match tailored-plan skills
+        tailored = TailoredResume(
+            items=[
+                TailoredItem(source_id="master:exp-1-b1", action="keep", original_text="x"),
+                TailoredItem(
+                    source_id="master:skill:Python", action="keep", original_text="Python"
+                ),
+                TailoredItem(source_id="master:skill:Go", action="keep", original_text="Go"),
+                TailoredItem(source_id="master:skill:AWS", action="keep", original_text="AWS"),
+                TailoredItem(
+                    source_id="master:skill:Docker", action="keep", original_text="Docker"
+                ),
+            ]
+        )
+        output = tmp_path / "resume.pdf"
+        generate_pdf(master, tailored, output)
+
+        with fitz.open(output) as doc:
+            text = "\n".join(page.get_text() for page in doc)
+        # Categories render as labelled lines.
+        assert "Languages: Python, Go" in text
+        assert "Cloud: AWS, Docker" in text
+
+    def test_skill_groups_fallback_to_flat_when_empty(self, tmp_path: Path) -> None:
+        """Master without skill_groups falls back to the flat `·`-separated line
+        (back-compat with pre-#68 YAMLs)."""
+        master = self._base_master()
+        assert master.skill_groups == []  # default
+        output = tmp_path / "resume.pdf"
+        generate_pdf(master, self._base_tailored(), output)
+
+        with fitz.open(output) as doc:
+            text = "\n".join(page.get_text() for page in doc)
+        assert "Python · AWS" in text
+        # No category label appears.
+        assert "Languages:" not in text

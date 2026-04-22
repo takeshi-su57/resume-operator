@@ -96,6 +96,13 @@ After `ats_score`, a routing function checks the score against `ATS_SKIP_THRESHO
 
 **Unicode sanitization (#66)**: every string that reaches the renderer passes through `_sanitize_for_pdf` — a boundary-layer that translates exotic Unicode (arrows `→`, non-breaking hyphens `‑`, curly quotes `'"`, horizontal ellipsis `…`) to ASCII and strips zero-width characters. Helvetica (the built-in font) can't render those glyphs, so without sanitization they come out as black `.notdef` boxes. `tailored.yaml` and `facts_bank.yaml` keep the LLM's original text; only the PDF text stream is normalized.
 
+**Senior-format fields (#68)**: `ResumeMaster` carries four optional additions that bring the render closer to senior-engineer CV conventions:
+- `headline` — short tagline under the name (e.g. *"Senior Software Engineer · Founding Engineer · Ex-Google"*)
+- `links` — structured Portfolio/LinkedIn/GitHub rendered as a second contact line
+- `skill_groups` — categorised skills (Languages / Frontend / Backend / Cloud). Flattens into the source_index with the same `master:skill:<name>` IDs, so the tailor's fabrication guard doesn't need to know whether the master is grouped or flat.
+- `ExperienceEntry.tech` — per-role tech stack rendered as a dim `Tech: A, B, C` line after the bullets
+All four are optional; older YAMLs without them fall back gracefully (no headline line, flat skills, no tech line). The bootstrap prompt asks the LLM to extract them when they appear in the source PDF; otherwise they stay empty.
+
 Templates are configured via `RESUME_TEMPLATE` (`default | compact | modern`); only `default` is implemented today, unknown values fall back to default with a warning.
 
 The `default` template targets both audiences: ATS parsers (single-column selectable text, standard fonts, no images or layout tables) and recruiters' six-second scan (name banner + thin accent rule, uppercase section labels with a pale rule underneath, role header with right-aligned dates on the same line, hanging-indent bullets, one muted deep-blue accent used sparingly).

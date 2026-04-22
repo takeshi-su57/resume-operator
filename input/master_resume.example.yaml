@@ -1,7 +1,17 @@
 name: Jane Smith
+headline: Senior Software Engineer · Founding Engineer · Ex-Acme
 email: jane.smith@example.com
 phone: "+1 555 123 4567"
 location: San Francisco, CA
+
+links:
+  - label: Portfolio
+    url: https://janesmith.example
+  - label: LinkedIn
+    url: linkedin.com/in/jane-smith
+  - label: GitHub
+    url: github.com/jsmith
+
 summary: >
   Senior fullstack engineer with 8 years of experience building distributed
   systems in Go and TypeScript. Focus on platform reliability and developer
@@ -21,6 +31,7 @@ experience:
         text: Designed gRPC contracts adopted by 12 teams across the company.
       - id: exp-1-b3
         text: Mentored 4 mid-level engineers and ran weekly architecture reviews.
+    tech: [Go, gRPC, Kubernetes, PostgreSQL, Prometheus]
 
   - id: exp-2
     role: Software Engineer
@@ -33,6 +44,7 @@ experience:
         text: Shipped React dashboard used by 500+ internal operators daily.
       - id: exp-2-b2
         text: Introduced end-to-end Playwright tests, reducing regression bugs 60%.
+    tech: [TypeScript, React, Playwright, Node.js]
 
 education:
   - id: edu-1
@@ -43,6 +55,21 @@ education:
     end_date: "2018"
     details: Dean's List, senior thesis on distributed consensus.
 
+# Categorised skills (#68). The renderer groups them under SKILLS.
+# Keep the flat `skills` list in sync if you want both to work for
+# older consumers — `all_skills()` dedupes across both.
+skill_groups:
+  - category: Languages & Runtimes
+    items: [Go, TypeScript, Python, SQL]
+  - category: Frontend & APIs
+    items: [React, Next.js, GraphQL, REST]
+  - category: Backend & Data
+    items: [Node.js, PostgreSQL, Redis, gRPC]
+  - category: Cloud & Infrastructure
+    items: [AWS, Kubernetes, Docker, Terraform]
+
+# Flat list — kept for back-compat with older renderers. When `skill_groups`
+# is populated the renderer uses those and ignores this list.
 skills:
   - Go
   - TypeScript

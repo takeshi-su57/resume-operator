@@ -9,9 +9,18 @@ from typing import Any
 from pydantic import BaseModel, Field, ValidationError
 
 from resume_operator.prompts.resume_parsing import PARSE_RESUME
-from resume_operator.state import JobDescription, ResumeData, ResumeOptimizerState
+from resume_operator.state import (
+    EducationEntry,
+    ExperienceBullet,
+    ExperienceEntry,
+    JobDescription,
+    Link,
+    ResumeData,
+    ResumeMaster,
+    ResumeOptimizerState,
+    SkillGroup,
+)
 from resume_operator.tools.llm_provider import get_structured_llm
-from resume_operator.tools.master_resume import resume_data_to_master
 from resume_operator.tools.pdf_parser import extract_text
 
 logger = logging.getLogger(__name__)
@@ -26,6 +35,9 @@ class ResumeExperienceLLM(BaseModel):
     # field encouraged the LLM to summarize multiple bullets into one sentence,
     # which defeated the purpose of a structured master resume (see issue #60).
     bullets: list[str] = Field(default_factory=list)
+    # Optional per-role tech stack shown as a `Tech: ...` line on well-built
+    # senior-engineer resumes (#68). Empty list when the source doesn't show one.
+    tech: list[str] = Field(default_factory=list)
 
 
 class ResumeEducationLLM(BaseModel):
@@ -33,6 +45,16 @@ class ResumeEducationLLM(BaseModel):
     school: str = ""
     start_date: str = ""
     end_date: str = ""
+
+
+class ResumeLinkLLM(BaseModel):
+    label: str = ""
+    url: str = ""
+
+
+class ResumeSkillGroupLLM(BaseModel):
+    category: str = ""
+    items: list[str] = Field(default_factory=list)
 
 
 class ResumeLLMOutput(BaseModel):
@@ -43,12 +65,16 @@ class ResumeLLMOutput(BaseModel):
     """
 
     name: str = ""
+    headline: str = ""  # tagline under the name (#68)
     email: str = ""
     phone: str = ""
+    location: str = ""
+    links: list[ResumeLinkLLM] = Field(default_factory=list)  # Portfolio / LinkedIn / GitHub (#68)
     summary: str = ""
     experience: list[ResumeExperienceLLM] = Field(default_factory=list)
     education: list[ResumeEducationLLM] = Field(default_factory=list)
     skills: list[str] = Field(default_factory=list)
+    skill_groups: list[ResumeSkillGroupLLM] = Field(default_factory=list)  # categorised (#68)
     certifications: list[str] = Field(default_factory=list)
 
 
@@ -68,6 +94,62 @@ def _experience_to_dict(entry: ResumeExperienceLLM) -> dict[str, str]:
         "end_date": entry.end_date,
         "description": description,
     }
+
+
+def _build_master_from_llm(parsed: ResumeLLMOutput) -> ResumeMaster:
+    """Build a `ResumeMaster` directly from the LLM output, preserving the new
+    senior-format fields (headline, links, categorised skills, per-role tech)
+    that `resume_data_to_master` can't carry because they don't exist on the
+    legacy `ResumeData` shape (#68).
+    """
+    experience = [
+        ExperienceEntry(
+            id=f"exp-{i + 1}",
+            role=e.role,
+            company=e.company,
+            start_date=e.start_date,
+            end_date=e.end_date,
+            bullets=[
+                ExperienceBullet(id=f"exp-{i + 1}-b{j + 1}", text=b.strip())
+                for j, b in enumerate(e.bullets)
+                if b.strip()
+            ],
+            tech=[t.strip() for t in e.tech if t.strip()],
+        )
+        for i, e in enumerate(parsed.experience)
+    ]
+    education = [
+        EducationEntry(
+            id=f"edu-{i + 1}",
+            degree=ed.degree,
+            school=ed.school,
+            start_date=ed.start_date,
+            end_date=ed.end_date,
+        )
+        for i, ed in enumerate(parsed.education)
+    ]
+    links = [
+        Link(label=link.label, url=link.url) for link in parsed.links if link.url or link.label
+    ]
+    skill_groups = [
+        SkillGroup(category=g.category, items=[s for s in g.items if s])
+        for g in parsed.skill_groups
+        if g.category and g.items
+    ]
+    return ResumeMaster(
+        name=parsed.name,
+        headline=parsed.headline,
+        email=parsed.email,
+        phone=parsed.phone,
+        location=parsed.location,
+        links=links,
+        summary=parsed.summary,
+        experience=experience,
+        education=education,
+        skills=list(parsed.skills),
+        skill_groups=skill_groups,
+        certifications=list(parsed.certifications),
+    )
 
 
 def parse_resume(state: ResumeOptimizerState) -> dict[str, Any]:
@@ -124,10 +206,10 @@ def parse_resume(state: ResumeOptimizerState) -> dict[str, Any]:
         raw_text=raw_text,
     )
     result["resume"] = resume_data
-    # Also synthesize a ResumeMaster with stable IDs so optimize_content (#026) has
-    # a source index even when the user is on the legacy PDF path. `bootstrap` uses
-    # this same conversion to seed a real YAML.
-    result["master"] = resume_data_to_master(resume_data)
+    # Also build a ResumeMaster with stable IDs + the senior-format extras
+    # (headline, links, skill_groups, per-role tech — #68). This path preserves
+    # the new fields that the legacy ResumeData shape can't carry.
+    result["master"] = _build_master_from_llm(parsed)
 
     # --- Read job description ---
     job_raw_text = state.job_description_text
