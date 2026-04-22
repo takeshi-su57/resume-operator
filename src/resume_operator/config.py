@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     ats_skip_threshold: float = 0.9
     resume_template: str = "default"  # default | compact | modern — stub for future templates
+    resume_style_path: str = ""  # path to a StyleTemplate YAML; overridden by `run --style` (#72)
     enrich_threshold: int = 6  # kept+reworded items below which `run` offers an enrich session
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}

@@ -215,3 +215,4 @@ data/
 .claude/settings.local.json
 input/*
 !input/*.example.yaml
+!input/style.default.yaml

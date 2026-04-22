@@ -1,0 +1,91 @@
+# style.default.yaml — StyleTemplate (#72).
+#
+# Copy this file, tweak any field, and pass it via `resume-operator run
+# --style path/to/your-style.yaml`. Every field is optional; missing fields
+# fall back to the values here.
+#
+# Font family handling:
+#   - Helvetica / Times-Roman / Courier are built into ReportLab.
+#   - Anything else needs a TTF in `input/fonts/<family>.ttf` (plus optional
+#     `<family>-Bold.ttf`, `<family>-Italic.ttf`, `<family>-BoldItalic.ttf`).
+#     Missing TTFs silently fall back to Helvetica with a one-time warning.
+
+name: default
+font_family: Helvetica
+
+colors:
+  name: "#1A202C"    # name banner text
+  body: "#2D3748"    # body + bullet text
+  accent: "#2C5282"  # section labels + rules
+  muted: "#555555"   # contact / dates / tech line
+  rule: "#CBD5E0"    # thin section dividers
+
+margins:
+  top: 0.6     # inches
+  bottom: 0.6
+  side: 0.6
+
+name_style:
+  size: 24
+  leading: 26
+  color: name
+  bold: true
+
+headline:
+  size: 11
+  leading: 14
+  color: accent
+  space_after: 2
+
+contact:
+  size: 9.5
+  leading: 12
+  color: muted
+  space_after: 8
+
+section:
+  size: 12
+  leading: 14
+  color: accent
+  bold: true
+  space_before: 12
+
+role_title:
+  size: 11
+  leading: 14
+  color: name
+  bold: true
+  space_before: 2
+
+role_dates:
+  size: 9.5
+  leading: 14
+  color: muted
+  alignment: right
+
+body:
+  size: 10
+  leading: 13
+  color: body
+  space_after: 2
+
+bullet:
+  size: 10
+  leading: 13
+  color: body
+  left_indent: 14
+  first_line_indent: -14
+  space_after: 1
+
+tech:
+  size: 9
+  leading: 12
+  color: muted
+  italic: true
+  left_indent: 14
+  space_before: 2
+  space_after: 2
+
+accent_rule_thickness: 1.2
+section_rule_thickness: 0.5
+bullet_glyph: "•"

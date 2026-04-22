@@ -16,10 +16,10 @@ from resume_operator.state import (
     TailoredResume,
 )
 from resume_operator.tools.pdf_generator import (
-    _default_styles,
     _sanitize_for_pdf,
     generate_pdf,
 )
+from resume_operator.tools.style import StyleTemplate, build_all_styles
 
 
 @pytest.fixture()
@@ -240,19 +240,19 @@ class TestSanitizeForPdf:
 
 class TestTypographicHierarchy:
     """Issue #66 introduced a clearer size hierarchy — pin it so future edits
-    don't silently flatten the page again."""
+    don't silently flatten the page again. Now driven by StyleTemplate (#72)."""
 
     def test_section_header_larger_than_body(self) -> None:
-        styles = _default_styles()
+        styles = build_all_styles(StyleTemplate())
         assert styles["section"].fontSize > styles["body"].fontSize
 
     def test_role_title_between_section_and_body(self) -> None:
-        styles = _default_styles()
+        styles = build_all_styles(StyleTemplate())
         assert styles["section"].fontSize >= styles["role_title"].fontSize
         assert styles["role_title"].fontSize > styles["body"].fontSize
 
     def test_name_is_the_largest_tier(self) -> None:
-        styles = _default_styles()
+        styles = build_all_styles(StyleTemplate())
         name = styles["name"].fontSize
         other_sizes = [
             styles["section"].fontSize,

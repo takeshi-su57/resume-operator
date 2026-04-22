@@ -19,7 +19,7 @@ from xml.sax.saxutils import escape
 
 from reportlab.lib.colors import HexColor
 from reportlab.lib.pagesizes import letter
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import (
     HRFlowable,
@@ -32,17 +32,9 @@ from reportlab.platypus import (
 
 from resume_operator.state import FactsBank, ResumeMaster, TailoredItem, TailoredResume
 from resume_operator.tools.source_index import build_source_index
+from resume_operator.tools.style import StyleTemplate, build_all_styles
 
 logger = logging.getLogger(__name__)
-
-# Template palette. One muted accent used only for the name rule, section rules,
-# and the right-aligned date strings. Body text stays black.
-_ACCENT = HexColor("#2C5282")  # deep muted blue
-_MUTED_GREY = HexColor("#555555")
-_RULE_GREY = HexColor("#CBD5E0")
-
-# Margins: tighter than the baseline so a well-packed one-pager fits without feeling cramped.
-_MARGIN = 0.6 * inch
 
 
 # --- Unicode sanitization -------------------------------------------------
@@ -116,6 +108,7 @@ def generate_pdf(
     output_path: Path,
     template: str = "default",
     facts: FactsBank | None = None,
+    style: StyleTemplate | None = None,
 ) -> Path:
     """Render a tailored resume to PDF from structured data.
 
@@ -123,19 +116,22 @@ def generate_pdf(
         master: The full hand-maintained master resume. Provides name/contact + role headers.
         tailored: The per-item tailoring decisions. Only `keep` and `reword` items are rendered.
         output_path: Where to write the PDF.
-        template: Template name (default | compact | modern). Only `default` is implemented;
-            unknown values fall back to default with a warning.
+        template: Legacy string template name — kept for back-compat; `style` overrides it (#72).
         facts: Optional facts bank — passing it lets the renderer correctly classify
             facts-bank items (projects, extra bullets) instead of treating them as skills.
+        style: Full `StyleTemplate` controlling fonts/sizes/colours/margins/spacing. When
+            `None`, a default template is used (matches the pre-#72 hardcoded constants).
 
     Returns:
         Path to the generated PDF file.
     """
-    logger.info("pdf_generator: generating PDF at %s (template=%s)", output_path, template)
-    if template != "default":
-        logger.warning(
-            "pdf_generator: template %r not implemented, falling back to default", template
-        )
+    effective_style = style if style is not None else StyleTemplate()
+    logger.info(
+        "pdf_generator: generating PDF at %s (style=%r, font=%r)",
+        output_path,
+        effective_style.name,
+        effective_style.font_family,
+    )
 
     plan = _build_render_plan(master, tailored, facts)
     if not plan.has_content():
@@ -143,16 +139,19 @@ def generate_pdf(
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    margin_side = effective_style.margins.side * inch
+    margin_top = effective_style.margins.top * inch
+    margin_bottom = effective_style.margins.bottom * inch
     doc = SimpleDocTemplate(
         str(output_path),
         pagesize=letter,
-        leftMargin=_MARGIN,
-        rightMargin=_MARGIN,
-        topMargin=_MARGIN,
-        bottomMargin=_MARGIN,
+        leftMargin=margin_side,
+        rightMargin=margin_side,
+        topMargin=margin_top,
+        bottomMargin=margin_bottom,
     )
 
-    flowables = _render_default(master, plan, doc.width)
+    flowables = _render_default(master, plan, doc.width, effective_style)
     doc.build(flowables)
     logger.info(
         "pdf_generator: completed — roles=%d, bullets=%d, skills=%d, %s",
@@ -256,8 +255,15 @@ def _infer_kind(item: TailoredItem) -> str:
     return "skill" if item.source_id.startswith(("master:skill", "facts:skill")) else "skill"
 
 
-def _render_default(master: ResumeMaster, plan: _RenderPlan, frame_width: float) -> list[object]:
-    styles = _default_styles()
+def _render_default(
+    master: ResumeMaster,
+    plan: _RenderPlan,
+    frame_width: float,
+    style: StyleTemplate,
+) -> list[object]:
+    styles = build_all_styles(style)
+    accent_color = HexColor(style.colors.accent)
+    rule_color = HexColor(style.colors.rule)
     flowables: list[object] = []
 
     # --- Header: name → tagline → accent rule → contact → links ---
@@ -275,8 +281,8 @@ def _render_default(master: ResumeMaster, plan: _RenderPlan, frame_width: float)
     flowables.append(
         HRFlowable(
             width="100%",
-            thickness=1.2,
-            color=_ACCENT,
+            thickness=style.accent_rule_thickness,
+            color=accent_color,
             spaceBefore=1,
             spaceAfter=4,
         )
@@ -298,12 +304,12 @@ def _render_default(master: ResumeMaster, plan: _RenderPlan, frame_width: float)
 
     # --- Summary ---
     if plan.summary:
-        flowables.extend(_section_header("SUMMARY", frame_width))
+        flowables.extend(_section_header("SUMMARY", frame_width, styles, style, rule_color))
         flowables.append(Paragraph(escape(_sanitize_for_pdf(plan.summary)), styles["body"]))
 
     # --- Experience (roles in master order) ---
     if plan.experience_by_role:
-        flowables.extend(_section_header("EXPERIENCE", frame_width))
+        flowables.extend(_section_header("EXPERIENCE", frame_width, styles, style, rule_color))
         master_role_order = [r.id for r in master.experience]
         seen: set[str] = set()
         for role_id in master_role_order:
@@ -315,7 +321,7 @@ def _render_default(master: ResumeMaster, plan: _RenderPlan, frame_width: float)
             if role is not None:
                 flowables.append(_role_row(role, styles, frame_width))
             for bullet in bullets:
-                flowables.append(Paragraph(_bullet(bullet), styles["bullet"]))
+                flowables.append(Paragraph(_bullet(bullet, style), styles["bullet"]))
             # Per-role tech line (#68). Sits right under the bullets as a dim italic
             # summary — ATS keyword bonus + recruiter skim aid.
             if role is not None and role.tech:
@@ -330,7 +336,7 @@ def _render_default(master: ResumeMaster, plan: _RenderPlan, frame_width: float)
                 Paragraph(escape(_sanitize_for_pdf(virtual_id.upper())), styles["role_title"])
             )
             for bullet in bullets:
-                flowables.append(Paragraph(_bullet(bullet), styles["bullet"]))
+                flowables.append(Paragraph(_bullet(bullet, style), styles["bullet"]))
             flowables.append(Spacer(1, 0.05 * inch))
 
     # --- Skills ---
@@ -351,7 +357,7 @@ def _render_default(master: ResumeMaster, plan: _RenderPlan, frame_width: float)
             visible_groups.append((group.category, filtered))
 
     if visible_groups:
-        flowables.extend(_section_header("SKILLS", frame_width))
+        flowables.extend(_section_header("SKILLS", frame_width, styles, style, rule_color))
         for category, items in visible_groups:
             sanitized_items = [_sanitize_for_pdf(i) for i in items]
             line = f"<b>{escape(_sanitize_for_pdf(category))}:</b> " + escape(
@@ -359,144 +365,44 @@ def _render_default(master: ResumeMaster, plan: _RenderPlan, frame_width: float)
             )
             flowables.append(Paragraph(line, styles["body"]))
     elif plan.skills:
-        flowables.extend(_section_header("SKILLS", frame_width))
+        flowables.extend(_section_header("SKILLS", frame_width, styles, style, rule_color))
         sanitized_skills = [_sanitize_for_pdf(s) for s in plan.skills]
         flowables.append(Paragraph(escape("  ·  ".join(sanitized_skills)), styles["body"]))
 
     # --- Education ---
     if plan.education:
-        flowables.extend(_section_header("EDUCATION", frame_width))
+        flowables.extend(_section_header("EDUCATION", frame_width, styles, style, rule_color))
         for entry in plan.education:
             flowables.append(Paragraph(escape(_sanitize_for_pdf(entry)), styles["body"]))
 
     # --- Certifications ---
     if plan.certifications:
-        flowables.extend(_section_header("CERTIFICATIONS", frame_width))
+        flowables.extend(_section_header("CERTIFICATIONS", frame_width, styles, style, rule_color))
         for cert in plan.certifications:
-            flowables.append(Paragraph(_bullet(cert), styles["bullet"]))
+            flowables.append(Paragraph(_bullet(cert, style), styles["bullet"]))
 
     flowables.append(Spacer(1, 0.05 * inch))
     return flowables
 
 
-def _default_styles() -> dict[str, ParagraphStyle]:
-    """Typographic hierarchy for the `default` template.
+def _section_header(
+    title: str,
+    frame_width: float,
+    styles: dict[str, ParagraphStyle],
+    style: StyleTemplate,
+    rule_color: HexColor,
+) -> list[object]:
+    """Uppercase section title followed by a thin rule across the frame.
 
-    Sizes create a clear tier structure so the recruiter's eye lands on
-    landmarks in the right order:
-      Name (24pt)  →  Section headers (12pt)  →  Role titles (11pt)  →
-      Body / bullets (10pt)  →  Role dates / contact (9.5pt, muted)
-
-    Issue #66 tightened this: previously section headers and role titles
-    were both 10.5pt — same size as bullets — which made the page read
-    flat. Splitting them into distinct tiers is the highest-leverage fix.
+    All visual knobs (rule thickness, colour, section-title style) come from
+    the StyleTemplate (#72) — no hardcoded constants.
     """
-    base = getSampleStyleSheet()
-    return {
-        "name": ParagraphStyle(
-            "Name",
-            parent=base["Heading1"],
-            fontName="Helvetica-Bold",
-            fontSize=24,
-            leading=26,
-            textColor=HexColor("#1A202C"),
-            spaceAfter=0,
-            alignment=0,
-        ),
-        "headline": ParagraphStyle(
-            "Headline",
-            parent=base["BodyText"],
-            fontName="Helvetica",
-            fontSize=11,
-            leading=14,
-            textColor=_ACCENT,
-            spaceAfter=2,
-        ),
-        "contact": ParagraphStyle(
-            "Contact",
-            parent=base["BodyText"],
-            fontName="Helvetica",
-            fontSize=9.5,
-            leading=12,
-            textColor=_MUTED_GREY,
-            spaceAfter=2,
-        ),
-        "tech": ParagraphStyle(
-            "Tech",
-            parent=base["BodyText"],
-            fontName="Helvetica-Oblique",
-            fontSize=9,
-            leading=12,
-            textColor=_MUTED_GREY,
-            leftIndent=14,
-            spaceBefore=2,
-            spaceAfter=2,
-        ),
-        "section": ParagraphStyle(
-            "Section",
-            parent=base["Heading2"],
-            fontName="Helvetica-Bold",
-            fontSize=12,
-            leading=14,
-            textColor=_ACCENT,
-            spaceBefore=12,
-            spaceAfter=0,
-        ),
-        "role_title": ParagraphStyle(
-            "RoleTitle",
-            parent=base["BodyText"],
-            fontName="Helvetica-Bold",
-            fontSize=11,
-            leading=14,
-            textColor=HexColor("#1A202C"),
-            spaceBefore=2,
-            spaceAfter=0,
-        ),
-        "role_dates": ParagraphStyle(
-            "RoleDates",
-            parent=base["BodyText"],
-            fontName="Helvetica",
-            fontSize=9.5,
-            leading=14,
-            textColor=_MUTED_GREY,
-            alignment=2,  # right
-        ),
-        "bullet": ParagraphStyle(
-            # Inline bullet with hanging indent. Keeping the `•` inline (rather than
-            # using `bulletText` on the style) means PDF text extractors read the
-            # bullet and its content on the same line, which matters for ATS parsers
-            # that consume text line-by-line. `firstLineIndent=-leftIndent` gives us
-            # the visual hanging indent without a separate bullet frame.
-            "Bullet",
-            parent=base["BodyText"],
-            fontName="Helvetica",
-            fontSize=10,
-            leading=13,
-            textColor=HexColor("#2D3748"),
-            leftIndent=14,
-            firstLineIndent=-14,
-            spaceAfter=1,
-        ),
-        "body": ParagraphStyle(
-            "Body",
-            parent=base["BodyText"],
-            fontName="Helvetica",
-            fontSize=10,
-            leading=13,
-            textColor=HexColor("#2D3748"),
-            spaceAfter=2,
-        ),
-    }
-
-
-def _section_header(title: str, frame_width: float) -> list[object]:
-    """Uppercase section title followed by a thin grey rule across the frame."""
     return [
-        Paragraph(escape(title), _default_styles()["section"]),
+        Paragraph(escape(title), styles["section"]),
         HRFlowable(
             width=frame_width,
-            thickness=0.5,
-            color=_RULE_GREY,
+            thickness=style.section_rule_thickness,
+            color=rule_color,
             spaceBefore=1,
             spaceAfter=3,
         ),
@@ -526,9 +432,13 @@ def _role_row(role: object, styles: dict[str, ParagraphStyle], frame_width: floa
     return table
 
 
-def _bullet(text: str) -> str:
-    """Format bullet content as `• <text>` so the glyph and content extract on one line."""
-    return f"• {escape(_sanitize_for_pdf(text))}"
+def _bullet(text: str, style: StyleTemplate) -> str:
+    """Format bullet content as `<glyph> <text>` so the glyph and content extract on one line.
+
+    The glyph comes from the StyleTemplate (#72) — defaults to `•` but users
+    can override per-template.
+    """
+    return f"{style.bullet_glyph} {escape(_sanitize_for_pdf(text))}"
 
 
 def _role_header_text(role: object) -> str:
