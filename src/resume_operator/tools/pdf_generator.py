@@ -303,9 +303,11 @@ def _render_default(
             flowables.append(Paragraph(escape("  ·  ".join(link_parts)), styles["contact"]))
 
     # --- Summary ---
+    # Uses the dedicated `summary` style (#74): same as body but with a ~2
+    # character-width first-line indent so the paragraph reads as prose.
     if plan.summary:
         flowables.extend(_section_header("SUMMARY", frame_width, styles, style, rule_color))
-        flowables.append(Paragraph(escape(_sanitize_for_pdf(plan.summary)), styles["body"]))
+        flowables.append(Paragraph(escape(_sanitize_for_pdf(plan.summary)), styles["summary"]))
 
     # --- Experience (roles in master order) ---
     if plan.experience_by_role:
