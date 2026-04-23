@@ -62,6 +62,7 @@ def apply_approvals(state: ResumeOptimizerState) -> dict[str, Any]:
 
     rewrites = 0
     new_items = 0
+    new_skills = 0
     skipped = 0
     for proposal in state.approved_proposals:
         if proposal.kind == "rewrite_fact":
@@ -73,6 +74,24 @@ def apply_approvals(state: ResumeOptimizerState) -> dict[str, Any]:
                     "apply_approvals: rewrite_fact grounded at %r not found in bank — skipped",
                     proposal.grounding_source_id,
                 )
+            continue
+
+        if proposal.kind == "new_skill":
+            # Bare skill name → `skills_beyond_master` (flat list). Dedupe by exact
+            # match so re-approving the same skill across runs doesn't grow noise.
+            skill = proposal.proposed_text.strip()
+            if not skill:
+                skipped += 1
+                continue
+            if skill in bank.skills_beyond_master or skill in _flatten_master_skills(state):
+                logger.info(
+                    "apply_approvals: skill %r already present — not re-adding",
+                    skill,
+                )
+                skipped += 1
+                continue
+            bank.skills_beyond_master.append(skill)
+            new_skills += 1
             continue
 
         # rewrite_master + new_fact both create new entries; rewrite_master carries
@@ -87,9 +106,11 @@ def apply_approvals(state: ResumeOptimizerState) -> dict[str, Any]:
 
     save_facts(bank, facts_path)
     logger.info(
-        "apply_approvals: completed — rewrites=%d, new_items=%d, skipped=%d, facts_path=%s",
+        "apply_approvals: completed — rewrites=%d, new_items=%d, new_skills=%d, "
+        "skipped=%d, facts_path=%s",
         rewrites,
         new_items,
+        new_skills,
         skipped,
         facts_path,
     )
@@ -107,6 +128,11 @@ def apply_approvals(state: ResumeOptimizerState) -> dict[str, Any]:
 
 def _collect_ids(bank: FactsBank) -> set[str]:
     return {fi.id for fi in (*bank.projects, *bank.extra_bullets)}
+
+
+def _flatten_master_skills(state: ResumeOptimizerState) -> set[str]:
+    """Every skill the master already lists — used to dedupe `new_skill` approvals."""
+    return set(state.master.all_skills()) if state.master else set()
 
 
 def _make_id_minter(existing: set[str], *, today: date) -> Callable[[], str]:
