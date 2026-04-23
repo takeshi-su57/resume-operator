@@ -32,13 +32,19 @@ src/resume_operator/         → Main Python package
   nodes/                     → Graph node functions (one per file)
     load_master.py           → Read master_resume.yaml into state (no LLM)
     parse_resume.py          → Legacy: PDF → ResumeData via LLM
-    ats_score.py             → Score resume ATS compatibility vs job description
+    ats_score.py             → Score ATS (master + ats_score_tailored for tailored output)
     analyze_gaps.py          → Identify gaps, strengths, improvement suggestions
-    optimize_content.py      → LLM-based resume content optimization
-    generate_pdf.py          → Render optimized resume to PDF via ReportLab
-    report_results.py        → Save results to JSON
+    optimize_content.py      → LLM-based per-item tailoring with fabrication guard
+    propose_changes.py       → #78 LLM proposals (rewrite_master / rewrite_fact / new_fact)
+    apply_approvals.py       → #78 persist accepted proposals to facts_bank.yaml
+    generate_pdf.py          → Render tailored resume to PDF via ReportLab
+    report_results.py        → Save results to JSON + tailored.yaml + diff.md
   tools/                     → Utility modules (I/O, external services)
     master_resume.py         → YAML load/save + ResumeData→ResumeMaster conversion
+    facts_bank.py            → Facts bank YAML I/O + merge-append helpers
+    source_index.py          → Fabrication-guard index (honors `overrides` field)
+    approval_flow.py         → #78 three-button + Fix-loop approval UX
+    enrich.py                → Interactive interview helper (LLM asks, user answers)
     pdf_parser.py            → PyMuPDF text extraction
     pdf_generator.py         → ReportLab PDF creation
     llm_provider.py          → LangChain model factory
@@ -52,7 +58,7 @@ docs/                        → Architecture docs + ADRs
 
 **LangGraph StateGraph** — The agent is a compiled StateGraph. `ResumeOptimizerState` (Pydantic model in `state.py`) flows through nodes. Each node is a function: `(state) -> dict` returning only the fields to update. LangGraph merges updates. See `.claude/rules/architecture.md`.
 
-**Agent flow** — `(load_master | parse_resume) → ats_score → [conditional: skip if score ≥ threshold] → analyze_gaps → optimize_content → generate_pdf → report_results`. Entry node is chosen by a conditional edge on `state.master_path`.
+**Agent flow** — `(load_master | parse_resume) → ats_score → [conditional: skip if score ≥ threshold] → analyze_gaps → optimize_content → ats_score_tailored → [#78 CLI loop: user gate → propose_changes → approval_flow → apply_approvals → re-tailor] → generate_pdf → report_results`. Entry node is chosen by a conditional edge on `state.master_path`. The iterative approval loop lives in the CLI (`main._run_approval_loop`) so interactive gates stay out of LangGraph's side-effect surface; the graph is split into `build_tailor_graph` (loop body) + `build_finalize_graph` (PDF + report, once at the end). Headless runs via `--no-approve` skip the loop and render the first tailored version directly.
 
 **Node design** — One public function per file in `nodes/`. Pure logic: receive state, call tools, return state delta. No global mutable state. Errors recorded in `state.errors`, pipeline continues.
 
@@ -64,7 +70,7 @@ docs/                        → Architecture docs + ADRs
 
 **Storage** — Local JSON files in `data/`. Results written after each run. No database.
 
-**CLI** — Typer app in `main.py` with Rich for progress display. Commands: `run`, `bootstrap`, `parse-resume`, `score`. `run` and `score` accept `--master` (preferred) or `--resume` (legacy). When `run` produces a thin tailored resume (kept items < `enrich_threshold`, default 6), it pauses and offers an interactive enrichment interview inline — LLM asks grounded questions, user answers in free text, LLM polishes to ATS bullets, accepted items append to `facts_bank.yaml`, and the graph re-invokes with the enriched facts. `--no-enrich` disables the prompt for headless runs.
+**CLI** — Typer app in `main.py` with Rich for progress display. Commands: `run`, `bootstrap`, `parse-resume`, `score`, `extract-style`. `run` and `score` accept `--master` (preferred) or `--resume` (legacy). When `run` produces a thin tailored resume (kept items < `enrich_threshold`, default 6), it pauses and offers an interactive enrichment interview — LLM asks grounded questions, user answers in free text, LLM polishes to ATS bullets, accepted items append to `facts_bank.yaml`. `--no-enrich` disables. After enrichment (or immediately if the tailor wasn't thin), `run` enters the #78 iterative approval loop: user sees the ATS score on the current tailored output and picks Accept / Reject. Reject runs `propose_changes` (up to 5 grounded proposals of kind `rewrite_master` / `rewrite_fact` / `new_fact`), gates each through a three-button Yes/No/Fix UX, writes approvals to `facts_bank.yaml` (with `overrides: master:...` when a master bullet is being polished — master stays strictly read-only), then re-tailors. Iteration cap via `--max-iter N` / `RESUME_MAX_ITERATIONS` (default 3); `--no-approve` skips the loop entirely for headless / CI.
 
 ## Key Commands
 

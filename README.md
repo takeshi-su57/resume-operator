@@ -96,7 +96,7 @@ uv run python -m resume_operator run --master data/master_resume.yaml --facts da
 
 | Command | Description |
 |---------|-------------|
-| `uv run python -m resume_operator run --master <yaml> --job <job> [--style <yaml>]` | Run full pipeline; auto-offers enrichment interview if tailoring is thin; optional style override |
+| `uv run python -m resume_operator run --master <yaml> --job <job> [--style <yaml>] [--max-iter N] [--no-approve] [--no-enrich]` | Run full pipeline. By default enters an iterative approval loop (#78): each tailor pass, user sees ATS score and accepts or rejects; rejection triggers LLM proposals the user gates through Yes/No/Fix. `--no-approve` skips the loop; `--max-iter N` overrides the default cap (3). |
 | `uv run python -m resume_operator bootstrap --resume <pdf>` | One-time: PDF → `master_resume.yaml` |
 | `uv run python -m resume_operator extract-style --from <docx> --output <yaml>` | Derive a StyleTemplate from a reference `.docx` CV |
 | `uv run python -m resume_operator parse-resume` | Parse a resume PDF (legacy, no YAML write) |
@@ -117,6 +117,10 @@ uv run python -m resume_operator run --master data/master_resume.yaml --facts da
 | `GOOGLE_API_KEY` | — | Google AI API key |
 | `OPENROUTER_API_KEY` | — | OpenRouter API key |
 | `LOG_LEVEL` | `INFO` | Logging level |
+| `ATS_SKIP_THRESHOLD` | `0.9` | Skip optimization entirely when the initial ATS score is at or above this. |
+| `RESUME_MAX_ITERATIONS` | `3` | Cap on the #78 approval loop before the "continue anyway?" prompt fires. |
+| `RESUME_STYLE_PATH` | — | Path to a StyleTemplate YAML; overridden by `run --style <path>`. |
+| `RESUME_TEMPLATE` | `default` | PDF render template (`default` only today). |
 
 ## AI Engineering
 
