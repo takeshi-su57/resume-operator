@@ -81,7 +81,7 @@ The loop re-invokes the tailor graph. `load_master` re-reads both files from dis
 
 Then iteration 2 starts: fresh ATS score, fresh user gate. Repeat until you accept, the LLM runs out of proposals, or the cap fires.
 
-## The three proposal kinds
+## The four proposal kinds
 
 Every proposal carries a `grounding_source_id` so you have an anchor to verify against.
 
@@ -90,8 +90,11 @@ Every proposal carries a `grounding_source_id` so you have an anchor to verify a
 | `rewrite_master` | Polishes an existing master bullet for JD alignment | `master:exp-*-b*` (bullets), `master:exp-*` (role headers), `master:skill:*`, etc. | Does the polish still describe what you actually did? If yes, accept. |
 | `rewrite_fact` | Polishes an existing `facts:*` entry | `facts:enrich-*`, `facts:approved-*`, etc. | Same check — polish without drift from reality. |
 | `new_fact` | Brand-new bullet extrapolated from an existing source | Cites which master/facts item the new claim is **extrapolated from** | Does the grounded source actually support this claim? This is the fabrication-sensitive path — be strict. |
+| `new_skill` (#80) | Adds a JD-listed skill to `facts_bank.skills_beyond_master` | Grounded in the master experience that plausibly implies the skill (e.g. *"JD wants Kubernetes; you ran microservices on Docker at `master:exp-2`"*) | **Do you actually have this skill?** Skills are unsupported self-reports — a polished bullet is tied to real work you did, a claimed skill is just a word. Don't autopilot through Yes here. |
 
 **For `new_fact` especially**: the LLM is required to tell you *"extrapolating from `master:exp-2-b3` — you used Docker on a 50-service deploy; this reframes it as K8s-adjacent."* Your job is to verify the grounding is real. If the grounded bullet doesn't actually support the proposed claim (you did Docker but never K8s, say), hit `n` with a reason. If it does support it but the wording is off, hit `f` to fix.
+
+**For `new_skill`**: same principle, higher stakes. The LLM proposes the skill name itself ("Kubernetes") with a grounding that's an *adjacency argument* ("you did Docker, this is close"). That adjacency might be wrong — you might have done Docker but never touched K8s. Reject with a reason like *"I never used K8s, only Docker Swarm"* and the LLM drops it from next iteration. A Fix here can redirect to the skill you actually have (*"propose Docker Swarm instead"*).
 
 ## The `overrides` mechanism (why master stays pristine)
 
