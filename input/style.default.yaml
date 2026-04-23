@@ -30,6 +30,7 @@ name_style:
   leading: 26
   color: name
   bold: true
+  space_after: 6   # visible breathing room between name and headline (#74)
 
 headline:
   size: 11
@@ -69,12 +70,22 @@ body:
   color: body
   space_after: 2
 
+# SUMMARY paragraph — classic body-copy first-line indent (~2 char-widths, #74).
+summary:
+  size: 10
+  leading: 13
+  color: body
+  space_after: 2
+  first_line_indent: 14
+
 bullet:
   size: 10
   leading: 13
   color: body
-  left_indent: 14
-  first_line_indent: -14
+  # 4 char-widths indent with hanging alignment so wrapped lines sit under
+  # the first bullet character, not under the bullet glyph (#74).
+  left_indent: 24
+  first_line_indent: -24
   space_after: 1
 
 tech:

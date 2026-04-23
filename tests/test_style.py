@@ -154,6 +154,7 @@ class TestBuildAllStyles:
             "role_title",
             "role_dates",
             "body",
+            "summary",  # #74: dedicated summary style with first-line indent
             "bullet",
             "tech",
         }
@@ -176,3 +177,40 @@ class TestBuildAllStyles:
         section_color_hex = styles["section"].textColor.hexval()
         # hexval is like '0x2c5282ff' — lowercase.
         assert section_color_hex.lower().startswith("0x2c5282")
+
+
+class TestStylePolish74:
+    """Pins the #74 knob defaults so future style rewrites can't silently
+    undo the gap / indent / bullet tweaks the user asked for."""
+
+    def test_name_has_space_after_so_headline_doesnt_touch_it(self) -> None:
+        styles = build_all_styles(StyleTemplate())
+        assert styles["name"].spaceAfter >= 6
+
+    def test_summary_style_first_line_indent(self) -> None:
+        """SUMMARY paragraph opens with a ~2 char-width first-line indent."""
+        styles = build_all_styles(StyleTemplate())
+        assert styles["summary"].firstLineIndent >= 10
+        # Continuation lines stay flush — no left indent on the style itself.
+        assert styles["summary"].leftIndent == 0
+
+    def test_summary_is_distinct_from_body(self) -> None:
+        """The indent only affects the SUMMARY paragraph; `body` (used for
+        education / skills flow / virtual buckets) stays flush."""
+        styles = build_all_styles(StyleTemplate())
+        assert styles["body"].firstLineIndent == 0
+        assert styles["body"].firstLineIndent != styles["summary"].firstLineIndent
+
+    def test_bullet_indent_is_four_char_widths(self) -> None:
+        """Bullets indent ~4 char-widths from the left frame edge."""
+        styles = build_all_styles(StyleTemplate())
+        assert styles["bullet"].leftIndent >= 20
+        # Hanging indent: wrapped continuation aligns with the first bullet character.
+        assert styles["bullet"].firstLineIndent == -styles["bullet"].leftIndent
+
+    def test_role_title_and_section_share_left_edge(self) -> None:
+        """Role header lines must start at the same x as SECTION headers —
+        both zero leftIndent so they align visually."""
+        styles = build_all_styles(StyleTemplate())
+        assert styles["role_title"].leftIndent == 0
+        assert styles["section"].leftIndent == 0

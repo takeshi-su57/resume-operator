@@ -84,7 +84,9 @@ class StyleTemplate(BaseModel):
 
     # Per-element styles — one TextStyle per ParagraphStyle the renderer emits.
     name_style: TextStyle = Field(
-        default_factory=lambda: TextStyle(size=24, leading=26, color="name", bold=True)
+        default_factory=lambda: TextStyle(
+            size=24, leading=26, color="name", bold=True, space_after=6
+        )
     )
     headline: TextStyle = Field(
         default_factory=lambda: TextStyle(size=11, leading=14, color="accent", space_after=2)
@@ -108,13 +110,21 @@ class StyleTemplate(BaseModel):
     body: TextStyle = Field(
         default_factory=lambda: TextStyle(size=10, leading=13, color="body", space_after=2)
     )
+    # Dedicated style for the SUMMARY paragraph — same as body but with a ~2
+    # character-width first-line indent (#74). Not reused for education / skills
+    # / virtual buckets so those stay flush left.
+    summary: TextStyle = Field(
+        default_factory=lambda: TextStyle(
+            size=10, leading=13, color="body", space_after=2, first_line_indent=14
+        )
+    )
     bullet: TextStyle = Field(
         default_factory=lambda: TextStyle(
             size=10,
             leading=13,
             color="body",
-            left_indent=14,
-            first_line_indent=-14,
+            left_indent=24,
+            first_line_indent=-24,
             space_after=1,
         )
     )
@@ -344,6 +354,7 @@ def build_all_styles(template: StyleTemplate) -> dict[str, ParagraphStyle]:
         "role_title": build_paragraph_style("RoleTitle", template.role_title, template),
         "role_dates": build_paragraph_style("RoleDates", template.role_dates, template),
         "body": build_paragraph_style("Body", template.body, template),
+        "summary": build_paragraph_style("Summary", template.summary, template),
         "bullet": build_paragraph_style("Bullet", template.bullet, template),
         "tech": build_paragraph_style("Tech", template.tech, template),
     }
