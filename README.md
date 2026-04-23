@@ -122,6 +122,12 @@ uv run python -m resume_operator run --master data/master_resume.yaml --facts da
 | `RESUME_STYLE_PATH` | — | Path to a StyleTemplate YAML; overridden by `run --style <path>`. |
 | `RESUME_TEMPLATE` | `default` | PDF render template (`default` only today). |
 
+## Guides
+
+- [Iterative tailor with approval](docs/guides/iterative-tailor-approval.md) — how the default `run` loop works: ATS gate, the three proposal kinds (`rewrite_master` / `rewrite_fact` / `new_fact`), the Yes/No/Fix UX, how `facts_bank.yaml` grows via `overrides` while `master_resume.yaml` stays hand-authored.
+- [Development](docs/guides/development.md) — setup, LangGraph concepts, testing, adding nodes / tools.
+- [Deployment](docs/guides/deployment.md) — running the agent as a service.
+
 ## AI Engineering
 
 This project uses an AI engineering framework for structured development. See [AI_ENGINEERING.md](AI_ENGINEERING.md) for details.
