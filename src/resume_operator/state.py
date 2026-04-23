@@ -123,6 +123,12 @@ class FactItem(BaseModel):
     text: str
     role_id: str = ""  # optional: links to an `ExperienceEntry.id` for spliceable bullets
     source: str = ""  # optional: e.g. "enrich 2026-04-21" — where this item came from
+    overrides: str = ""
+    # Optional: when non-empty, this fact *replaces* the master entry with this
+    # `source_id` in the source index — the tailor sees the polished text instead
+    # of the original hand-authored one. Populated by the `apply_approvals` node
+    # when the user accepts a `rewrite_master` proposal (#78). Deleting this
+    # fact brings the original master entry back; master is strictly read-only.
 
 
 class FactsBank(BaseModel):

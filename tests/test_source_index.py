@@ -11,6 +11,7 @@ from resume_operator.state import (
     EducationEntry,
     ExperienceBullet,
     ExperienceEntry,
+    FactItem,
     FactsBank,
     ResumeMaster,
     SkillGroup,
@@ -82,3 +83,71 @@ class TestFactsBankPassthrough:
         idx = build_source_index(master, facts)
         assert "master:skill:Python" in idx
         assert "facts:skill:Docker" in idx
+
+
+class TestOverrides:
+    """#78: facts-bank items with `overrides: master:...` shadow the master entry
+    so the tailor sees exactly one version per thought."""
+
+    def test_override_hides_master_bullet(self) -> None:
+        master = _minimal_master()  # has master:exp-1-b1 "Did things"
+        facts = FactsBank(
+            extra_bullets=[
+                FactItem(
+                    id="enrich-1",
+                    text="Did things with Kubernetes at scale",
+                    overrides="master:exp-1-b1",
+                )
+            ]
+        )
+        idx = build_source_index(master, facts)
+        assert "master:exp-1-b1" not in idx
+        # The facts entry itself is still present under its own id.
+        assert "facts:enrich-1" in idx
+        assert idx.get("facts:enrich-1").text == "Did things with Kubernetes at scale"
+
+    def test_fact_without_override_leaves_master_alone(self) -> None:
+        """The presence of a facts bank doesn't suppress anything unless an item
+        explicitly opts in via `overrides`."""
+        master = _minimal_master()
+        facts = FactsBank(extra_bullets=[FactItem(id="enrich-1", text="Something new")])
+        idx = build_source_index(master, facts)
+        assert "master:exp-1-b1" in idx
+        assert "facts:enrich-1" in idx
+
+    def test_override_on_project_field_also_shadows(self) -> None:
+        """Overrides on `projects` entries work the same way as `extra_bullets`."""
+        master = _minimal_master()
+        facts = FactsBank(
+            projects=[
+                FactItem(id="proj-1", text="Rebuilt the auth layer", overrides="master:exp-1-b1")
+            ]
+        )
+        idx = build_source_index(master, facts)
+        assert "master:exp-1-b1" not in idx
+        assert "facts:proj-1" in idx
+
+    def test_override_targeting_missing_master_id_is_ignored(self) -> None:
+        """A stale override pointing at a deleted master entry doesn't break the
+        index build — the override just has no effect and the fact remains."""
+        master = _minimal_master()
+        facts = FactsBank(
+            extra_bullets=[
+                FactItem(id="enrich-1", text="Orphaned polish", overrides="master:exp-99-b99")
+            ]
+        )
+        idx = build_source_index(master, facts)
+        # Master is unchanged; the fact is still in the index under its own id.
+        assert "master:exp-1-b1" in idx
+        assert "facts:enrich-1" in idx
+
+    def test_override_hides_master_skill(self) -> None:
+        master = _minimal_master(skills=["Python"])
+        facts = FactsBank(
+            extra_bullets=[
+                FactItem(id="enrich-1", text="Python (8+ years)", overrides="master:skill:Python")
+            ]
+        )
+        idx = build_source_index(master, facts)
+        assert "master:skill:Python" not in idx
+        assert "facts:enrich-1" in idx
