@@ -133,3 +133,71 @@ class TestOptimizeContent:
 
         assert "errors" in result
         assert any("source index is empty" in e for e in result["errors"])
+
+
+class TestKeptRatioGuard:
+    """Post-run guard surfaces a warning when the tailor keeps too much (#76)."""
+
+    @patch("resume_operator.nodes.optimize_content.get_structured_llm")
+    def test_warns_when_kept_ratio_above_threshold(
+        self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
+    ) -> None:
+        """sample_master has a known number of source_index entries. If the
+        LLM 'keeps' almost all of them, the guard should surface a warning
+        note in tailored.notes marked with the ⚠ glyph."""
+        from resume_operator.tools.source_index import build_source_index
+
+        # Count how many items the source_index produces for sample_master.
+        # We'll keep all of them to force a 100% ratio.
+        index = build_source_index(sample_state.master, sample_state.facts)
+        all_items = [
+            TailoredItemLLM(source_id=sid, action="keep", original_text=entry.text)
+            for sid, entry in index.entries.items()
+            if not sid.startswith("master:summary")  # summary lives on its own field
+        ]
+
+        mock_get_llm.return_value = _make_llm(
+            TailoredResumeLLMOutput(
+                tailored_headline="x",
+                tailored_summary="y",
+                items=all_items,
+                notes=["LLM-provided strategy note"],
+            )
+        )
+
+        result = optimize_content(sample_state)
+        tailored = result["tailored_resume"]
+
+        # Warning marker (⚠) landed in notes — surfaces in diff.md's Warnings block.
+        warning_notes = [n for n in tailored.notes if n.lstrip().startswith("⚠")]
+        assert len(warning_notes) == 1
+        assert "under-optimizing" in warning_notes[0]
+        # Strategy note preserved alongside the warning.
+        assert any("LLM-provided" in n for n in tailored.notes)
+
+    @patch("resume_operator.nodes.optimize_content.get_structured_llm")
+    def test_no_warning_when_kept_ratio_below_threshold(
+        self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
+    ) -> None:
+        """A well-tailored run that drops most items shouldn't get the warning."""
+        from resume_operator.tools.source_index import build_source_index
+
+        index = build_source_index(sample_state.master, sample_state.facts)
+        all_sids = [sid for sid in index.entries if not sid.startswith("master:summary")]
+        # Keep only the first 2 items; drop the rest.
+        items = [
+            TailoredItemLLM(source_id=all_sids[0], action="keep", original_text=""),
+            TailoredItemLLM(source_id=all_sids[1], action="keep", original_text=""),
+        ] + [
+            TailoredItemLLM(source_id=sid, action="drop", original_text="") for sid in all_sids[2:]
+        ]
+
+        mock_get_llm.return_value = _make_llm(
+            TailoredResumeLLMOutput(items=items, tailored_headline="", tailored_summary="")
+        )
+
+        result = optimize_content(sample_state)
+        tailored = result["tailored_resume"]
+
+        warning_notes = [n for n in tailored.notes if n.lstrip().startswith("⚠")]
+        assert warning_notes == []

@@ -1,16 +1,22 @@
 """Render a human-readable `diff.md` from a `TailoredResume`.
 
-Three sections:
+Five sections:
+  - Warnings: notes flagged by the tailor / post-guards (#76)
+  - Tailored Headline / Summary: fresh JD-crafted text
+  - Strategy Notes: LLM's own explanation of what was emphasized / cut
   - Additions: facts-bank items pulled into the output
   - Rewordings: master items included but rephrased (shows before/after)
   - Deletions: master items considered but dropped
-Skills and certifications are grouped separately for readability.
+
+Notes starting with `⚠` are treated as warnings and surface at the top.
 """
 
 from __future__ import annotations
 
 from resume_operator.state import TailoredItem, TailoredResume
 from resume_operator.tools.source_index import SourceIndex
+
+WARNING_MARKER = "⚠"
 
 
 def render_diff(tailored: TailoredResume, index: SourceIndex) -> str:
@@ -22,7 +28,15 @@ def render_diff(tailored: TailoredResume, index: SourceIndex) -> str:
     rewordings = [i for i in tailored.items if i.action == "reword"]
     deletions = [i for i in tailored.items if i.action == "drop"]
 
+    warnings = [note for note in tailored.notes if note.lstrip().startswith(WARNING_MARKER)]
+    strategy_notes = [n for n in tailored.notes if not n.lstrip().startswith(WARNING_MARKER)]
+
     lines: list[str] = ["# Tailoring Diff", ""]
+
+    if warnings:
+        lines.append("## Warnings")
+        lines.extend(f"- {w}" for w in warnings)
+        lines.append("")
 
     if tailored.tailored_headline:
         lines.append("## Tailored Headline (fresh, JD-crafted)")
@@ -34,9 +48,9 @@ def render_diff(tailored: TailoredResume, index: SourceIndex) -> str:
         lines.append(tailored.tailored_summary)
         lines.append("")
 
-    if tailored.notes:
+    if strategy_notes:
         lines.append("## Strategy Notes")
-        lines.extend(f"- {note}" for note in tailored.notes)
+        lines.extend(f"- {note}" for note in strategy_notes)
         lines.append("")
 
     lines.append("## Additions — items pulled from the facts bank")

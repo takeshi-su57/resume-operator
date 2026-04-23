@@ -89,15 +89,26 @@ def optimize_content(state: ResumeOptimizerState) -> dict[str, Any]:
         tailored_summary=parsed.tailored_summary.strip(),
         tailored_headline=parsed.tailored_headline.strip(),
     )
+
+    # #76: kept-ratio guard. When the LLM keeps more than KEEP_RATIO_WARN of
+    # the source menu, it's probably being too permissive — a well-tailored
+    # resume for an off-domain JD should drop most items. Surface this as a
+    # warning both in logs and in diff.md notes so the user can spot it.
+    _maybe_add_kept_ratio_warning(tailored, index_size=len(index.entries))
+
     optimized_legacy = _project_to_sections(tailored, index)
 
+    kept = sum(1 for i in tailored.items if i.action == "keep")
+    reworded = sum(1 for i in tailored.items if i.action == "reword")
+    dropped = sum(1 for i in tailored.items if i.action == "drop")
     logger.info(
         "optimize_content: completed — items=%d (kept=%d, reworded=%d, dropped=%d), "
-        "fabricated_rejected=%d, notes=%d, summary=%s, headline=%s",
+        "kept_ratio=%.0f%%, fabricated_rejected=%d, notes=%d, summary=%s, headline=%s",
         len(tailored.items),
-        sum(1 for i in tailored.items if i.action == "keep"),
-        sum(1 for i in tailored.items if i.action == "reword"),
-        sum(1 for i in tailored.items if i.action == "drop"),
+        kept,
+        reworded,
+        dropped,
+        _kept_ratio(tailored, len(index.entries)) * 100,
         len(rejected),
         len(tailored.notes),
         "yes" if tailored.tailored_summary else "no",
@@ -111,6 +122,45 @@ def optimize_content(state: ResumeOptimizerState) -> dict[str, Any]:
     if errors != list(state.errors):
         result["errors"] = errors
     return result
+
+
+# #76: when kept_ratio > this threshold, warn that the tailor is probably
+# being too permissive. 0.70 chosen empirically — a well-matched master/JD
+# sits at ~50-65%; a truly mis-matched master/JD should drop below 0.70
+# once the LLM takes the aggressive-drop instruction seriously.
+KEEP_RATIO_WARN = 0.70
+
+# Notes that start with this marker surface in a dedicated Warnings block at
+# the top of diff.md (ahead of Strategy Notes). See tools/diff_renderer.py.
+WARNING_MARKER = "⚠"
+
+
+def _kept_ratio(tailored: TailoredResume, index_size: int) -> float:
+    """Fraction of source-menu items the tailor chose to keep or reword."""
+    if index_size <= 0:
+        return 0.0
+    return len(tailored.kept_or_reworded()) / index_size
+
+
+def _maybe_add_kept_ratio_warning(tailored: TailoredResume, *, index_size: int) -> None:
+    """Append a warning note when the tailor's kept-ratio is above the guard.
+
+    Doesn't block the run — the PDF still generates. The warning is a signal
+    that the LLM may not have taken the drop-aggressively instruction
+    seriously. Shows up in logs AND in diff.md via the WARNING_MARKER.
+    """
+    ratio = _kept_ratio(tailored, index_size)
+    if ratio <= KEEP_RATIO_WARN or index_size <= 0:
+        return
+    kept = len(tailored.kept_or_reworded())
+    msg = (
+        f"{WARNING_MARKER} Kept-ratio {ratio:.0%} ({kept}/{index_size}) is above "
+        f"{KEEP_RATIO_WARN:.0%} — the tailor may be under-optimizing. Expect a "
+        f"focused tailored resume to drop more items when the master's domain "
+        f"is broader than the JD's."
+    )
+    logger.warning("optimize_content: %s", msg)
+    tailored.notes.append(msg)
 
 
 def _validate_items(
