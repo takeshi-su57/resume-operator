@@ -318,15 +318,17 @@ class TestRunCommand:
         assert result.exit_code != 0
         assert "does not exist" in _clean_output(result.output)
 
-    @patch("resume_operator.main.build_graph")
-    def test_successful_run(self, mock_build: MagicMock, tmp_path: Path) -> None:
+    @patch("resume_operator.main.build_finalize_graph")
+    @patch("resume_operator.main.build_tailor_graph")
+    def test_successful_run(
+        self, mock_tailor: MagicMock, mock_finalize: MagicMock, tmp_path: Path
+    ) -> None:
         fake_pdf = tmp_path / "resume.pdf"
         fake_pdf.touch()
         fake_job = tmp_path / "job.txt"
         fake_job.write_text("Backend Engineer")
 
-        mock_graph = MagicMock()
-        mock_graph.invoke.return_value = {
+        tailor_result = {
             "resume": ResumeData(name="Jane Smith", skills=["Python"]),
             "ats_score": ATSScore(
                 score=0.85,
@@ -341,10 +343,15 @@ class TestRunCommand:
                 sections={"summary": "Optimized"},
                 changes_made=["Added K8s to skills"],
             ),
-            "output_path": "data/optimized_resume.pdf",
             "report": {"timestamp": "2026-03-30"},
         }
-        mock_build.return_value = mock_graph
+        finalize_result = {**tailor_result, "output_path": "data/optimized_resume.pdf"}
+        mock_tailor_graph = MagicMock()
+        mock_tailor_graph.invoke.return_value = tailor_result
+        mock_tailor.return_value = mock_tailor_graph
+        mock_finalize_graph = MagicMock()
+        mock_finalize_graph.invoke.return_value = finalize_result
+        mock_finalize.return_value = mock_finalize_graph
 
         result = runner.invoke(app, ["run", "--resume", str(fake_pdf), "--job", str(fake_job)])
 
@@ -354,19 +361,26 @@ class TestRunCommand:
         assert "data/optimized_resume.pdf" in result.output
         assert "Pipeline completed successfully" in result.output
 
-    @patch("resume_operator.main.build_graph")
-    def test_displays_errors(self, mock_build: MagicMock, tmp_path: Path) -> None:
+    @patch("resume_operator.main.build_finalize_graph")
+    @patch("resume_operator.main.build_tailor_graph")
+    def test_displays_errors(
+        self, mock_tailor: MagicMock, mock_finalize: MagicMock, tmp_path: Path
+    ) -> None:
         fake_pdf = tmp_path / "resume.pdf"
         fake_pdf.touch()
         fake_job = tmp_path / "job.txt"
         fake_job.write_text("Engineer")
 
-        mock_graph = MagicMock()
-        mock_graph.invoke.return_value = {
+        err_state = {
             "resume": ResumeData(),
             "errors": ["ats_score: LLM call failed: timeout"],
         }
-        mock_build.return_value = mock_graph
+        mock_tailor_graph = MagicMock()
+        mock_tailor_graph.invoke.return_value = err_state
+        mock_tailor.return_value = mock_tailor_graph
+        mock_finalize_graph = MagicMock()
+        mock_finalize_graph.invoke.return_value = err_state
+        mock_finalize.return_value = mock_finalize_graph
 
         result = runner.invoke(app, ["run", "--resume", str(fake_pdf), "--job", str(fake_job)])
 
@@ -439,9 +453,10 @@ class TestExtractStyleCommand:
 
 
 class TestRunStyleFlag:
-    @patch("resume_operator.main.build_graph")
+    @patch("resume_operator.main.build_finalize_graph")
+    @patch("resume_operator.main.build_tailor_graph")
     def test_style_flag_plumbed_into_initial_state(
-        self, mock_build: MagicMock, tmp_path: Path
+        self, mock_tailor: MagicMock, mock_finalize: MagicMock, tmp_path: Path
     ) -> None:
         """`run --style PATH` should put the style path into the graph's initial state
         so `generate_pdf` can pick it up."""
@@ -452,9 +467,12 @@ class TestRunStyleFlag:
         style = tmp_path / "style.yaml"
         style.write_text("name: mine\n", encoding="utf-8")
 
-        mock_graph = MagicMock()
-        mock_graph.invoke.return_value = {"errors": []}
-        mock_build.return_value = mock_graph
+        mock_tailor_graph = MagicMock()
+        mock_tailor_graph.invoke.return_value = {"errors": []}
+        mock_tailor.return_value = mock_tailor_graph
+        mock_finalize_graph = MagicMock()
+        mock_finalize_graph.invoke.return_value = {"errors": []}
+        mock_finalize.return_value = mock_finalize_graph
 
         runner.invoke(
             app,
@@ -470,12 +488,12 @@ class TestRunStyleFlag:
             ],
         )
 
-        # First call to graph.invoke — inspect the kwargs dict.
-        assert mock_graph.invoke.called
-        initial = mock_graph.invoke.call_args.args[0]
+        # First call to the tailor graph — inspect the kwargs dict.
+        assert mock_tailor_graph.invoke.called
+        initial = mock_tailor_graph.invoke.call_args.args[0]
         assert initial.get("style_path") == str(style)
 
-    @patch("resume_operator.main.build_graph")
+    @patch("resume_operator.main.build_tailor_graph")
     def test_style_flag_rejects_missing_file(self, mock_build: MagicMock, tmp_path: Path) -> None:
         master = tmp_path / "m.yaml"
         master.write_text("name: x\n", encoding="utf-8")

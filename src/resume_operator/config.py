@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     resume_template: str = "default"  # default | compact | modern — stub for future templates
     resume_style_path: str = ""  # path to a StyleTemplate YAML; overridden by `run --style` (#72)
     enrich_threshold: int = 6  # kept+reworded items below which `run` offers an enrich session
+    resume_max_iterations: int = 3  # #78 iterative tailor loop cap; overridden by `run --max-iter`
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
