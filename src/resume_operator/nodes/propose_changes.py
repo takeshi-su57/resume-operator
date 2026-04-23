@@ -162,6 +162,13 @@ def revise_proposal(
 # --- helpers --------------------------------------------------------------
 
 
+ALLOWED_KINDS = {"rewrite_master", "rewrite_fact", "new_fact", "new_skill"}
+# Kinds whose `original_text` should come from the canonical menu entry (the
+# LLM sometimes paraphrases the echo). `new_fact` and `new_skill` have no
+# pre-existing form at the grounding, so we keep whatever the LLM emitted.
+_REWRITE_KINDS = {"rewrite_master", "rewrite_fact"}
+
+
 def _validate_and_build(
     raw: list[ProposalLLM], index: SourceIndex
 ) -> tuple[list[Proposal], list[str]]:
@@ -170,7 +177,6 @@ def _validate_and_build(
     doesn't display an LLM paraphrase."""
     kept: list[Proposal] = []
     rejected: list[str] = []
-    allowed_kinds = {"rewrite_master", "rewrite_fact", "new_fact"}
     for r in raw:
         entry = index.get(r.grounding_source_id)
         if entry is None:
@@ -180,11 +186,11 @@ def _validate_and_build(
             # Silently drop proposals with empty text — not worth surfacing to the user.
             continue
         kind = r.kind.lower().strip()
-        if kind not in allowed_kinds:
+        if kind not in ALLOWED_KINDS:
             kind = _infer_kind(r.grounding_source_id)
-        # Echo the canonical text for rewrite kinds; leave empty for new_fact unless
-        # the LLM explicitly paraphrased the grounding.
-        original_text = entry.text if kind != "new_fact" else r.original_text.strip()
+        # Echo the canonical text for rewrite kinds; leave empty for new_fact /
+        # new_skill unless the LLM explicitly paraphrased the grounding.
+        original_text = entry.text if kind in _REWRITE_KINDS else r.original_text.strip()
         kept.append(
             Proposal(
                 kind=kind,
@@ -199,7 +205,12 @@ def _validate_and_build(
 
 
 def _infer_kind(source_id: str) -> str:
-    """Fallback kind inference when the LLM picks something outside the allowed set."""
+    """Fallback kind inference when the LLM picks something outside the allowed set.
+
+    Skills (`master:skill:*`, `facts:skill:*`) grounded at the skill itself
+    default to `rewrite_master` / `rewrite_fact`; a `new_skill` proposal
+    grounded at a skill would be a re-statement of what's already there.
+    """
     if source_id.startswith("master:"):
         return "rewrite_master"
     if source_id.startswith("facts:"):

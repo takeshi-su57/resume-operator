@@ -119,6 +119,7 @@ _KIND_LABEL = {
     "rewrite_master": "Rewrite of your existing master bullet",
     "rewrite_fact": "Polish of a facts-bank entry",
     "new_fact": "NEW bullet (LLM extrapolation — verify truth)",
+    "new_skill": "NEW skill (verify you actually have this)",
 }
 
 

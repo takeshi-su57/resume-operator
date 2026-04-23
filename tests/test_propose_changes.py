@@ -135,6 +135,34 @@ class TestProposeChanges:
         assert result["proposals"][0].kind == "rewrite_master"
 
     @patch("resume_operator.nodes.propose_changes.get_structured_llm")
+    def test_new_skill_kind_preserved_text_not_overwritten(
+        self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
+    ) -> None:
+        """#80: `new_skill` grounded at a master experience item keeps the LLM's
+        bare skill name as `proposed_text`. Unlike `rewrite_*`, we don't
+        overwrite `original_text` with the menu entry — the menu entry is the
+        role header ("Senior Engineer @ TechCorp"), not the skill name."""
+        mock_get_llm.return_value = _make_llm(
+            ProposeChangesLLMOutput(
+                proposals=[
+                    ProposalLLM(
+                        kind="new_skill",
+                        grounding_source_id="master:exp-1",
+                        proposed_text="Kubernetes",
+                        rationale="JD wants K8s; master:exp-1 describes microservices work",
+                    )
+                ]
+            )
+        )
+        result = propose_changes(sample_state)
+        assert len(result["proposals"]) == 1
+        p = result["proposals"][0]
+        assert p.kind == "new_skill"
+        assert p.proposed_text == "Kubernetes"
+        # No anchor to the menu entry — skills don't have a pre-existing form.
+        assert p.original_text == ""
+
+    @patch("resume_operator.nodes.propose_changes.get_structured_llm")
     def test_skips_empty_proposed_text(
         self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:

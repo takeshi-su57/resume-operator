@@ -43,6 +43,15 @@ def _scripted(answers: list[str]):  # noqa: ANN202 — just a helper
 
 
 class TestRunApprovalFlow:
+    def test_kind_labels_cover_all_four_kinds(self) -> None:
+        """#80: every `Proposal.kind` the LLM can emit has a human-readable label.
+        If this breaks, the panel shows a raw 'new_skill' in the UI."""
+        from resume_operator.tools.approval_flow import _KIND_LABEL
+
+        for kind in ("rewrite_master", "rewrite_fact", "new_fact", "new_skill"):
+            assert kind in _KIND_LABEL
+            assert _KIND_LABEL[kind]  # non-empty string
+
     def test_empty_proposals_returns_empty_outcome(self) -> None:
         state = ResumeOptimizerState()
         outcome = run_approval_flow(

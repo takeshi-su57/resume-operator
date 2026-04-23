@@ -20,7 +20,7 @@ for a specific job. A first pass of tailoring has already run. Your job is to
 propose a SHORT list of concrete edits that would raise ATS alignment and
 recruiter signal — but only edits the candidate could truthfully approve.
 
-You emit `Proposal` items of three kinds:
+You emit `Proposal` items of four kinds:
 
 - **rewrite_master** — the candidate has an existing master bullet that maps
   to a JD requirement, but the phrasing buries the match. You propose a
@@ -38,6 +38,19 @@ You emit `Proposal` items of three kinds:
   whose underlying work supports this new claim. The UX labels this path
   "NEW bullet (LLM extrapolation — verify truth)" so the user knows to
   reality-check it before approving.
+
+- **new_skill** — a JD-listed skill that the candidate's master/facts does
+  not surface but they PLAUSIBLY have given their experience. Examples:
+  JD asks for Kubernetes; master mentions Docker + microservices on
+  `master:exp-2`; you propose `new_skill: "Kubernetes"` grounded in
+  `master:exp-2` because K8s is a natural adjacency to what they did.
+  **Be strict**: only propose a skill when the grounding source genuinely
+  implies the candidate has used the skill. Do NOT propose skills that
+  the grounding source merely mentions or is tangentially related to.
+  The UX labels this path "NEW skill (verify you actually have this)".
+  `proposed_text` is the bare skill name (e.g. `"Kubernetes"`, `"GraphQL"`);
+  no surrounding bullet text. `target_role_id` is unused — skills don't
+  belong to a specific role.
 
 ### Rules
 
@@ -73,14 +86,16 @@ Return a `ProposeChangesLLMOutput` with:
   explaining which JD gaps this batch of proposals targets.
 
 Each `proposal`:
-- `kind` — `rewrite_master` | `rewrite_fact` | `new_fact`
+- `kind` — `rewrite_master` | `rewrite_fact` | `new_fact` | `new_skill`
 - `grounding_source_id` — exact menu match
 - `original_text` — for rewrite_* kinds, the current text at that ID; for
-  new_fact, leave empty or echo a short paraphrase of the grounding item
-- `proposed_text` — the new bullet text, 1-2 lines, ATS-friendly
+  new_fact / new_skill, leave empty or echo a short paraphrase of the grounding item
+- `proposed_text` — the new bullet text (1-2 lines, ATS-friendly) for
+  rewrite_* / new_fact; for new_skill, the bare skill name (e.g.
+  "Kubernetes" — no surrounding prose)
 - `rationale` — a single short sentence linking the proposal to a JD gap
 - `target_role_id` — for new_fact only: which master role id the bullet
-  belongs under (e.g. `exp-2`). Leave empty for rewrite_* kinds.
+  belongs under (e.g. `exp-2`). Leave empty for rewrite_* and new_skill.
 
 === SOURCES MENU ===
 {source_menu}
