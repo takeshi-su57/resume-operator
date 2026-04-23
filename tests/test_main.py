@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 from typer.testing import CliRunner
 
 from resume_operator.main import app
@@ -370,6 +371,135 @@ class TestRunCommand:
         result = runner.invoke(app, ["run", "--resume", str(fake_pdf), "--job", str(fake_job)])
 
         assert "LLM call failed" in result.output
+
+
+class TestExtractStyleCommand:
+    def test_rejects_non_docx(self, tmp_path: Path) -> None:
+        not_docx = tmp_path / "resume.pdf"
+        not_docx.touch()
+        result = runner.invoke(
+            app,
+            [
+                "extract-style",
+                "--from",
+                str(not_docx),
+                "--output",
+                str(tmp_path / "out.yaml"),
+            ],
+        )
+        assert result.exit_code != 0
+        assert "not a .docx" in _clean_output(result.output)
+
+    def test_rejects_missing_file(self, tmp_path: Path) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "extract-style",
+                "--from",
+                str(tmp_path / "nope.docx"),
+                "--output",
+                str(tmp_path / "out.yaml"),
+            ],
+        )
+        assert result.exit_code != 0
+        assert "does not exist" in _clean_output(result.output)
+
+    def test_extract_writes_yaml(self, tmp_path: Path) -> None:
+        """End-to-end: build a tiny .docx, run extract-style, verify YAML."""
+        from docx import Document as DocxDocument
+        from docx.shared import Inches, Pt, RGBColor
+
+        src = tmp_path / "ref.docx"
+        doc = DocxDocument()
+        for sec in doc.sections:
+            sec.top_margin = Inches(0.4)
+            sec.left_margin = Inches(0.4)
+        normal = doc.styles["Normal"]
+        normal.font.name = "Aptos"
+        normal.font.size = Pt(11)
+        h2 = doc.styles["Heading 2"]
+        h2.font.size = Pt(15)
+        h2.font.color.rgb = RGBColor(0x0F, 0x47, 0x61)
+        doc.add_paragraph("SUMMARY", style="Heading 2")
+        doc.save(str(src))
+
+        out = tmp_path / "out.yaml"
+        result = runner.invoke(app, ["extract-style", "--from", str(src), "--output", str(out)])
+
+        assert result.exit_code == 0, result.output
+        assert out.exists()
+
+        import yaml
+
+        data = yaml.safe_load(out.read_text(encoding="utf-8"))
+        assert data["font_family"] == "Aptos"
+        assert data["margins"]["top"] == pytest.approx(0.4)
+        assert data["colors"]["accent"].upper() == "#0F4761"
+        assert data["section"]["size"] == pytest.approx(15)
+
+
+class TestRunStyleFlag:
+    @patch("resume_operator.main.build_graph")
+    def test_style_flag_plumbed_into_initial_state(
+        self, mock_build: MagicMock, tmp_path: Path
+    ) -> None:
+        """`run --style PATH` should put the style path into the graph's initial state
+        so `generate_pdf` can pick it up."""
+        master = tmp_path / "m.yaml"
+        master.write_text("name: x\n", encoding="utf-8")
+        job = tmp_path / "j.txt"
+        job.write_text("jd", encoding="utf-8")
+        style = tmp_path / "style.yaml"
+        style.write_text("name: mine\n", encoding="utf-8")
+
+        mock_graph = MagicMock()
+        mock_graph.invoke.return_value = {"errors": []}
+        mock_build.return_value = mock_graph
+
+        runner.invoke(
+            app,
+            [
+                "run",
+                "--master",
+                str(master),
+                "--job",
+                str(job),
+                "--style",
+                str(style),
+                "--no-enrich",
+            ],
+        )
+
+        # First call to graph.invoke — inspect the kwargs dict.
+        assert mock_graph.invoke.called
+        initial = mock_graph.invoke.call_args.args[0]
+        assert initial.get("style_path") == str(style)
+
+    @patch("resume_operator.main.build_graph")
+    def test_style_flag_rejects_missing_file(self, mock_build: MagicMock, tmp_path: Path) -> None:
+        master = tmp_path / "m.yaml"
+        master.write_text("name: x\n", encoding="utf-8")
+        job = tmp_path / "j.txt"
+        job.write_text("jd", encoding="utf-8")
+
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "--master",
+                str(master),
+                "--job",
+                str(job),
+                "--style",
+                str(tmp_path / "nope.yaml"),
+                "--no-enrich",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "does not exist" in _clean_output(result.output)
+        # Graph must not have been invoked with a missing style path.
+        mock_build.return_value.invoke.assert_not_called()
 
 
 class TestScoreCommand:

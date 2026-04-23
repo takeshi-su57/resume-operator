@@ -107,6 +107,10 @@ All four are optional; older YAMLs without them fall back gracefully (no headlin
 
 **Dynamic headline (#70)**: `TailoredResume.tailored_headline` is a fresh JD-crafted tagline written by the optimizer every run, alongside `tailored_summary`. Grounded strictly in master facts (titles, years, companies, tech) — no invented "Ex-Google". Same accept/reject fabrication-safety shape as the summary. When non-empty it replaces `master.headline` in the rendered PDF.
 
+**StyleTemplate (#72)**: every visual knob the renderer used to hardcode (font family, sizes, colours, margins, spacing, rule thickness, bullet glyph) now lives in a `StyleTemplate` Pydantic model serialised to YAML. `tools/style.py` defines the schema, loads from YAML, registers TTF fonts on demand, and builds ReportLab `ParagraphStyle` objects. `tools/style_from_docx.py` walks a reference `.docx` and emits a StyleTemplate YAML mirroring its named-style choices (font family, sizes, colours, margins). CLI surface: `extract-style --from <ref.docx> --output <style.yaml>` produces the YAML; `run --style <path>` applies it. Precedence: CLI flag → `RESUME_STYLE_PATH` env → `input/style.default.yaml` → code defaults.
+
+Font-family handling: Helvetica/Times/Courier are built into ReportLab; custom families look for `input/fonts/<Name>.ttf` (plus optional `<Name>-Bold.ttf`, `<Name>-Italic.ttf`, `<Name>-BoldItalic.ttf`). Missing TTFs log a one-time warning and fall back to Helvetica — the render keeps going.
+
 Templates are configured via `RESUME_TEMPLATE` (`default | compact | modern`); only `default` is implemented today, unknown values fall back to default with a warning.
 
 The `default` template targets both audiences: ATS parsers (single-column selectable text, standard fonts, no images or layout tables) and recruiters' six-second scan (name banner + thin accent rule, uppercase section labels with a pale rule underneath, role header with right-aligned dates on the same line, hanging-indent bullets, one muted deep-blue accent used sparingly).

@@ -225,6 +225,7 @@ class ResumeOptimizerState(BaseModel):
     resume_path: str = ""
     master_path: str = ""
     facts_path: str = ""
+    style_path: str = ""  # optional StyleTemplate YAML (#72)
     job_description_path: str = ""
     job_description_text: str = ""
 

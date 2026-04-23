@@ -205,6 +205,15 @@ def run(
             "Use for scripted / headless runs where stdin isn't available."
         ),
     ),
+    style: Path = typer.Option(
+        None,
+        "--style",
+        "-s",
+        help=(
+            "Path to a StyleTemplate YAML (#72). Overrides RESUME_STYLE_PATH env. "
+            "If neither set, falls back to input/style.default.yaml when it exists."
+        ),
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate inputs without executing"),
 ) -> None:
@@ -268,6 +277,10 @@ def run(
         initial["resume_path"] = str(resume)
     if resolved_facts is not None:
         initial["facts_path"] = str(resolved_facts)
+    if style is not None:
+        if not style.exists():
+            raise typer.BadParameter(f"--style path {style} does not exist.")
+        initial["style_path"] = str(style)
 
     graph = build_graph()
     with Status("[bold cyan]Running optimization pipeline...", console=console):
@@ -445,6 +458,65 @@ def bootstrap(
             f"[bold]Headline:[/bold] {headline_status}\n\n"
             f"[yellow]Review the YAML, edit freely, and keep it under version control.[/yellow]",
             title="Master resume bootstrapped",
+            border_style="green",
+        )
+    )
+
+
+@app.command(name="extract-style")
+def extract_style(
+    from_: Path = typer.Option(
+        ..., "--from", "-i", help="Path to a reference .docx (resume or CV template)"
+    ),
+    output: Path = typer.Option(
+        ..., "--output", "-o", help="Where to write the derived style.yaml"
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
+) -> None:
+    """Derive a StyleTemplate YAML from a reference .docx (issue #72).
+
+    Reads the document's named styles (Normal, Heading, Heading 2, …), section
+    margins, and default font family; writes a StyleTemplate YAML mirroring
+    those choices. Every field is a starting point — review and hand-tweak the
+    saved file afterwards.
+
+    Then apply with:
+        resume-operator run --master M.yaml --job J.txt --style <output>
+    """
+    from resume_operator.tools.style import save_style
+    from resume_operator.tools.style_from_docx import (
+        StyleExtractionError,
+        extract_style_from_docx,
+    )
+
+    _setup_logging(verbose)
+    if not from_.exists() or not from_.is_file():
+        raise typer.BadParameter(f"'{from_}' does not exist or is not a file.")
+    if from_.suffix.lower() != ".docx":
+        raise typer.BadParameter(f"'{from_}' is not a .docx file.")
+
+    with Status("[bold cyan]Extracting style...", console=console):
+        try:
+            template = extract_style_from_docx(from_)
+        except StyleExtractionError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1) from exc
+
+    save_style(template, output)
+    console.print(
+        Panel(
+            f"[bold]Wrote:[/bold] {output}\n"
+            f"[bold]Font family:[/bold] {template.font_family}\n"
+            f"[bold]Margins:[/bold] "
+            f"{template.margins.top}in top / "
+            f"{template.margins.bottom}in bottom / "
+            f"{template.margins.side}in side\n"
+            f"[bold]Name size:[/bold] {template.name_style.size}pt  "
+            f"[bold]Section size:[/bold] {template.section.size}pt  "
+            f"[bold]Body size:[/bold] {template.body.size}pt\n\n"
+            f"[yellow]Review the YAML, tweak as needed. Apply via:[/yellow]\n"
+            f"  resume-operator run --master ... --job ... --style {output}",
+            title="Style extracted",
             border_style="green",
         )
     )
