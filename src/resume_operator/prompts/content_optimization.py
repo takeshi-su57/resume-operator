@@ -31,11 +31,54 @@ the JD below. Rules:
 - Do NOT also include `master:summary` in the `items` list below — the
   dedicated field owns the summary.
 
-### Part 2 — Per-item decisions
+### Part 2 — Per-item decisions (be aggressive about dropping)
 
-For every other master/facts item, decide keep / reword / drop. Every item
-you reference MUST use the exact `source_id` from the menu below. An output
-item whose `source_id` is not in this menu will be rejected.
+This is the hardest part and the one where you are most likely to go wrong
+by being too permissive. DEFAULT TO DROPPING. The tailored resume should
+look focused on THIS specific JD, not like a catalog of everything the
+candidate has ever done.
+
+Decision rules:
+
+- **KEEP** — the item directly supports a listed JD requirement (stack,
+  responsibility, domain). Current and recent roles that match the JD's
+  domain. Skills/certs explicitly named or near-named in the JD.
+
+- **REWORD** — the item supports the JD but the wording doesn't surface
+  that fit. Rewrite to lead with the JD-relevant keyword while staying
+  faithful to what the candidate actually did. Fill `new_text`.
+
+- **DROP** — the item doesn't advance THIS JD. Be ruthless here. Common
+  cases you MUST drop:
+    * Frontend-only bullets for a backend JD (and vice versa)
+    * Domain-specific work the JD doesn't touch — e.g. Web3 / crypto /
+      NFT / smart contracts for a traditional SaaS backend JD
+    * Older tech stacks the JD doesn't mention (PHP, Solidity, jQuery,
+      Ruby on Rails, etc. — unless the JD asks for them)
+    * Experimental / personal / side-project work that doesn't match
+      the JD's industry or scale
+    * Roles older than the candidate's last 3-4 most recent — unless
+      they uniquely cover a JD-required skill nothing newer does
+    * Skills the candidate lists but the JD doesn't care about — a
+      skills section with 20 entries reads as unfocused; 8-10 tight
+      matches reads as targeted
+
+Target: a one-page tailored resume. That typically means 4-8 bullets
+across the 2-4 most recent roles, plus a tight skills section (8-12
+relevant entries), education, and certs. Everything else should be
+`drop`, not `keep`.
+
+**Self-check before returning**: count your `keep` + `reword` items
+across the SOURCES MENU. If more than ~50% of the menu ends up
+kept+reworded, you are almost certainly being too permissive — go back
+and drop more. A backend-specific JD applied to a mixed Web3/frontend
+master should typically drop 50-70% of the items.
+
+Every item you reference MUST use the exact `source_id` from the menu
+below. An output item whose `source_id` is not in this menu will be
+rejected. Items you decide to drop should appear in the output as
+`action: "drop"` — that way the diff.md shows the reader what was
+considered and cut (not silently omitted).
 
 === SOURCES MENU ===
 {source_menu}
@@ -54,7 +97,8 @@ Return a `TailoredResumeLLMOutput` with:
 - `items` — list of per-item decisions (see below); do NOT include a
   `master:summary` entry here.
 - `notes` — short free-form strategy notes explaining what you emphasized,
-  what you downplayed, and why.
+  what you downplayed, and specifically which domains/roles you dropped
+  because the JD didn't need them.
 
 Each `item`:
 - `source_id` — exact menu match
@@ -64,7 +108,8 @@ Each `item`:
 - `new_text` — only when action is `reword`
 
 Pull in `facts:*` items only when they strengthen the match for this
-specific JD.
+specific JD. Same aggressive-drop rule applies — a facts item that
+doesn't advance THIS JD should be `drop`, not `keep`.
 
 ### Output style
 
