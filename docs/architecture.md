@@ -18,23 +18,44 @@ load_master            parse_resume
   +-----------+------------+
               |
               v
-         ats_score          Score resume against job description
+         ats_score          Score master resume against JD (initial pass)
+              |
+       [conditional]        ATS score >= skip_threshold (default 0.9)?
+              |         \
+              | NO       \ YES — skip the loop entirely
+              v            \
+         analyze_gaps       |
+              |             |
+              v             |
+       optimize_content     |
+              |             |
+              v             |
+       ats_score_tailored   |   Score the tailored output (#78 loop body)
+              |             |
+              +<-------+    |
+              |        |    |
+     user gate in CLI  |    |
+    (accept? / cap?)   |    |
+              |        |    |
+         [continue]    |    |
+              |        |    |
+     propose_changes   |    |    LLM emits rewrite_master / rewrite_fact /
+              |        |    |    new_fact proposals, each grounded in a source_id
+              v        |    |
+     run_approval_flow |    |    Y / N / Fix loop (unbounded) per proposal
+              |        |    |
+     apply_approvals   |    |    Accepted proposals -> facts_bank.yaml;
+              |        |    |    rewrite_master carries `overrides: master:...`
+              |        |    |    so source_index hides the shadowed master entry
+              +--------+    |
+         [user accepts      |
+         or cap decline]    |
+              |             |
+              v             v
+         generate_pdf      (skip path joins here too)
               |
               v
-       [conditional]        ATS score >= threshold (default 0.9)?
-              |         \
-              | NO       \ YES
-              v            \
-         analyze_gaps       \
-              |              \
-              v               \
-       optimize_content        |
-              |                |
-              v                |
-         generate_pdf           |
-              |                |
-              v                v
-         report_results   report_results
+         report_results
               |
               v
              END
@@ -108,6 +129,12 @@ All four are optional; older YAMLs without them fall back gracefully (no headlin
 **Dynamic headline (#70)**: `TailoredResume.tailored_headline` is a fresh JD-crafted tagline written by the optimizer every run, alongside `tailored_summary`. Grounded strictly in master facts (titles, years, companies, tech) — no invented "Ex-Google". Same accept/reject fabrication-safety shape as the summary. When non-empty it replaces `master.headline` in the rendered PDF.
 
 **StyleTemplate (#72)**: every visual knob the renderer used to hardcode (font family, sizes, colours, margins, spacing, rule thickness, bullet glyph) now lives in a `StyleTemplate` Pydantic model serialised to YAML. `tools/style.py` defines the schema, loads from YAML, registers TTF fonts on demand, and builds ReportLab `ParagraphStyle` objects. `tools/style_from_docx.py` walks a reference `.docx` and emits a StyleTemplate YAML mirroring its named-style choices (font family, sizes, colours, margins). CLI surface: `extract-style --from <ref.docx> --output <style.yaml>` produces the YAML; `run --style <path>` applies it. Precedence: CLI flag → `RESUME_STYLE_PATH` env → `input/style.default.yaml` → code defaults.
+
+**Iterative approval loop (#78)** — see [docs/guides/iterative-tailor-approval.md](guides/iterative-tailor-approval.md) for the user-facing walkthrough. After the first tailor pass, `run` enters a user-driven loop (unless `--no-approve` is set or stdin isn't a TTY). Each iteration shows the ATS score on the current tailored output and offers Accept → done / Reject → continue / cap-reached → "continue anyway?". On continue, `propose_changes` asks the LLM for up to 5 grounded proposals of three kinds:
+- `rewrite_master` — polishes an existing master bullet; when approved, lands in `facts_bank.extra_bullets` with `overrides: "master:exp-..."` set. The next tailor iteration's `build_source_index` hides the shadowed master entry, so the prompt menu and rendered PDF see exactly one version per thought. Zero duplication, and **`master_resume.yaml` stays hand-authored and read-only** — every accepted change lands in facts_bank.
+- `rewrite_fact` — replaces an existing facts-bank entry's text in place (same id, for source_index stability).
+- `new_fact` — brand-new bullet extrapolated from an existing source; the prompt forces the LLM to cite which item supports the claim so the user can reality-check it.
+Each proposal goes through a three-button UX in `tools/approval_flow.py` — `Y`es / `N`o / `F`ix (free-text feedback → `revise_proposal` emits v2 → back to the same three buttons, unbounded). Rejected proposals go into a per-run `rejected_suggestions` list that feeds back into `propose_changes` so the LLM doesn't re-propose ideas the user has already vetoed. The loop exits when the user accepts, when the LLM has no more proposals, when the user quits, or when they decline to continue past the iteration cap — in which case the best-scoring iteration seen is rendered. CLI: `--max-iter N` (default 3, also `RESUME_MAX_ITERATIONS`), `--no-approve` for headless.
 
 Font-family handling: Helvetica/Times/Courier are built into ReportLab; custom families look for `input/fonts/<Name>.ttf` (plus optional `<Name>-Bold.ttf`, `<Name>-Italic.ttf`, `<Name>-BoldItalic.ttf`). Missing TTFs log a one-time warning and fall back to Helvetica — the render keeps going.
 

@@ -123,6 +123,12 @@ class FactItem(BaseModel):
     text: str
     role_id: str = ""  # optional: links to an `ExperienceEntry.id` for spliceable bullets
     source: str = ""  # optional: e.g. "enrich 2026-04-21" — where this item came from
+    overrides: str = ""
+    # Optional: when non-empty, this fact *replaces* the master entry with this
+    # `source_id` in the source index — the tailor sees the polished text instead
+    # of the original hand-authored one. Populated by the `apply_approvals` node
+    # when the user accepts a `rewrite_master` proposal (#78). Deleting this
+    # fact brings the original master entry back; master is strictly read-only.
 
 
 class FactsBank(BaseModel):
@@ -218,6 +224,43 @@ class TailoredResume(BaseModel):
         return [i for i in self.items if i.action in {"keep", "reword"}]
 
 
+# --- #78 iterative tailor loop -------------------------------------------
+#
+# The approval loop produces `Proposal` items from the LLM; the user gates each
+# through a three-button UX (Yes/No/Fix). Accepted proposals land in the facts
+# bank (persisted). Rejected proposals land in `rejected_suggestions` on state
+# (per-run only) so the LLM doesn't re-propose the same idea on the next loop
+# iteration.
+
+
+class Proposal(BaseModel):
+    """One LLM-generated suggestion the user can accept, reject, or refine (#78).
+
+    Each proposal cites a `grounding_source_id` so the user has an anchor when
+    deciding whether to approve — especially for the fabrication-sensitive
+    `new_fact` kind, which extrapolates from an existing source rather than
+    polishing one directly.
+    """
+
+    kind: str  # one of: rewrite_master | rewrite_fact | new_fact
+    grounding_source_id: str  # e.g. "master:exp-2-b3" or "facts:enrich-20260423-1"
+    original_text: str = ""  # canonical text at grounding_source_id (empty for new_fact)
+    proposed_text: str
+    rationale: str = ""  # short LLM note on why this helps JD alignment
+    target_role_id: str = ""  # for new_fact: which master role the bullet belongs under
+
+
+class RejectedSuggestion(BaseModel):
+    """A proposal the user declined on this run. Passed back to `propose_changes`
+    on the next iteration so the LLM avoids re-proposing the same idea (#78).
+    """
+
+    kind: str
+    grounding_source_id: str
+    rejected_text: str
+    user_reason: str = ""
+
+
 class ResumeOptimizerState(BaseModel):
     """Central state flowing through the LangGraph pipeline."""
 
@@ -242,6 +285,25 @@ class ResumeOptimizerState(BaseModel):
     # Optimization
     optimized_resume: OptimizedResume = Field(default_factory=OptimizedResume)
     tailored_resume: TailoredResume = Field(default_factory=TailoredResume)
+
+    # #78 iterative tailor loop — all ephemeral, per-run only.
+    current_iteration: int = 0  # 1-indexed, bumped at the start of each loop pass
+    max_iterations: int = 3
+    # Best (tailored_resume, ats_score) seen so far — used when the user hits the
+    # iteration cap and chooses to render instead of continuing.
+    best_tailored_so_far: TailoredResume = Field(default_factory=TailoredResume)
+    best_score_so_far: float = 0.0
+    # Populated by `propose_changes` each iteration; cleared after the user gates it.
+    proposals: list[Proposal] = Field(default_factory=list)
+    # Populated by `approval_flow` when the user accepts / rejects; `apply_approvals`
+    # drains `approved_proposals` into facts_bank at end of iteration.
+    approved_proposals: list[Proposal] = Field(default_factory=list)
+    rejected_suggestions: list[RejectedSuggestion] = Field(default_factory=list)
+    # The user's decision on the current iteration's ATS score.
+    user_accepted_tailored: bool = False
+    # Headless mode: skip the loop entirely, behave like the pre-#78 single-pass
+    # tailor. Used for CI / batch / `--no-approve`.
+    skip_approval_loop: bool = False
 
     # Output
     output_dir: str = ""  # per-application folder (data/applications/{date}_{slug}/)

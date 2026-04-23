@@ -9,8 +9,20 @@ from rich.panel import Panel
 from rich.status import Status
 
 from resume_operator.config import get_settings
-from resume_operator.graph import build_graph, build_score_graph
-from resume_operator.state import ATSScore, GapAnalysis, OptimizedResume, ResumeData
+from resume_operator.graph import (
+    build_finalize_graph,
+    build_graph,
+    build_score_graph,
+    build_tailor_graph,
+)
+from resume_operator.state import (
+    ATSScore,
+    GapAnalysis,
+    OptimizedResume,
+    RejectedSuggestion,
+    ResumeData,
+    ResumeOptimizerState,
+)
 
 app = typer.Typer(
     name="resume-operator",
@@ -110,6 +122,139 @@ def _should_offer_enrich(
     return len(tailored.kept_or_reworded()) < threshold
 
 
+def _should_run_approval_loop(
+    result: dict[str, object],
+    *,
+    no_approve: bool,
+) -> bool:
+    """Decide whether to enter the #78 iterative approval loop.
+
+    Triggers when:
+      - the user didn't explicitly opt out via `--no-approve`
+      - stdin is a TTY (we need to prompt the user)
+      - the first tailor pass actually produced a tailored resume
+        (the #44 skip gate may have bypassed optimization entirely)
+    """
+    import sys
+
+    if no_approve or not sys.stdin.isatty():
+        return False
+
+    from resume_operator.state import TailoredResume
+
+    tailored = result.get("tailored_resume")
+    return isinstance(tailored, TailoredResume) and bool(tailored.items)
+
+
+def _run_approval_loop(
+    *,
+    tailor_graph: object,
+    initial_result: dict[str, object],
+    initial_input: dict[str, object],
+    max_iterations: int,
+) -> dict[str, object]:
+    """Drive the iterative tailor → score → gate → propose → approve → apply → re-tailor loop.
+
+    Returns the final tailor-graph result used by the finalize step. The loop
+    exits when (a) the user accepts the current ATS score, (b) the LLM
+    produces no proposals, (c) the user quits mid-approval, or (d) the user
+    declines to continue past the iteration cap — in which case the
+    best-scoring iteration seen so far is returned.
+    """
+    from rich.prompt import Confirm
+
+    from resume_operator.nodes.apply_approvals import apply_approvals
+    from resume_operator.nodes.propose_changes import propose_changes, revise_proposal
+    from resume_operator.tools.approval_flow import run_approval_flow
+
+    current = initial_result
+    best = current
+    best_score = _result_score(current)
+    iteration = 1
+    max_iter_current = max_iterations
+    accumulated_rejections: list[RejectedSuggestion] = []
+
+    while True:
+        score = _result_score(current)
+        if score > best_score:
+            best, best_score = current, score
+
+        color = _score_color(score)
+        console.print(
+            f"\n[bold]Iteration {iteration}/{max_iter_current}:[/bold] "
+            f"ATS score on tailored output = [{color}]{score:.0%}[/{color}]"
+        )
+        if Confirm.ask(
+            "[bold]Accept this tailored version and generate the PDF?[/bold]",
+            default=False,
+            console=console,
+        ):
+            return current
+
+        if iteration >= max_iter_current:
+            console.print(
+                f"[yellow]Reached {max_iter_current} iterations (best ATS={best_score:.0%}). "
+                "Continue iterating?[/yellow]"
+            )
+            if not Confirm.ask("Continue anyway?", default=False, console=console):
+                console.print("[cyan]Using the best-scoring tailored version so far.[/cyan]")
+                return best
+            # Reset counter — user opted in for more. Add another cap on top.
+            max_iter_current = iteration + max_iterations
+
+        # Build a state object for propose + approval + apply (these nodes are
+        # called directly, not through the graph).
+        state = ResumeOptimizerState.model_validate(current)
+        state.rejected_suggestions = list(accumulated_rejections)
+
+        with Status("[bold cyan]LLM proposing tailored edits...", console=console):
+            proposal_out = propose_changes(state)
+        proposals = proposal_out.get("proposals", [])
+        if not proposals:
+            console.print(
+                "[yellow]LLM had no proposals this iteration — "
+                "sticking with the best version so far.[/yellow]"
+            )
+            return best
+
+        outcome = run_approval_flow(
+            state,
+            list(proposals),
+            revise_fn=revise_proposal,
+            console=console,
+        )
+        accumulated_rejections.extend(outcome.rejected)
+        if outcome.quit_early:
+            console.print(
+                "[cyan]You quit the approval step — using the best tailored version so far.[/cyan]"
+            )
+            return best
+        if not outcome.approved:
+            # User rejected everything. No new facts — next tailor pass would
+            # produce the same output. Exit with the best seen.
+            console.print(
+                "[cyan]Nothing approved this iteration — using the best version so far.[/cyan]"
+            )
+            return best
+
+        state.approved_proposals = list(outcome.approved)
+        apply_approvals(state)  # writes to facts_bank.yaml on disk
+
+        with Status("[bold cyan]Re-tailoring with the approved facts...", console=console):
+            current = tailor_graph.invoke(initial_input)  # type: ignore[attr-defined]
+        iteration += 1
+
+
+def _result_score(result: dict[str, object]) -> float:
+    ats = result.get("ats_score")
+    if isinstance(ats, ATSScore):
+        return ats.score
+    if isinstance(ats, dict):
+        value = ats.get("score", 0.0)
+        return float(value) if isinstance(value, (int, float)) else 0.0
+    return 0.0
+
+
 def _run_auto_enrich(*, master_path: Path, facts_path: Path | None, jd_text: str) -> bool:
     """Pause the pipeline, prompt for an enrichment session, persist accepted items.
 
@@ -205,6 +350,22 @@ def run(
             "Use for scripted / headless runs where stdin isn't available."
         ),
     ),
+    no_approve: bool = typer.Option(
+        False,
+        "--no-approve",
+        help=(
+            "Skip the iterative approval loop (#78) and render the first tailored "
+            "version directly. Used for scripted / headless runs and CI."
+        ),
+    ),
+    max_iter: int = typer.Option(
+        None,
+        "--max-iter",
+        help=(
+            "Maximum approval-loop iterations before the 'continue anyway?' prompt "
+            "(default 3, also settable via RESUME_MAX_ITERATIONS env)."
+        ),
+    ),
     style: Path = typer.Option(
         None,
         "--style",
@@ -282,9 +443,10 @@ def run(
             raise typer.BadParameter(f"--style path {style} does not exist.")
         initial["style_path"] = str(style)
 
-    graph = build_graph()
+    tailor_graph = build_tailor_graph()
+    finalize_graph = build_finalize_graph()
     with Status("[bold cyan]Running optimization pipeline...", console=console):
-        result = graph.invoke(initial)
+        result = tailor_graph.invoke(initial)
 
     # --- Auto-enrich: if the first tailor pass is thin, offer an interview ---
     if _should_offer_enrich(result, no_enrich=no_enrich, master_path=master):
@@ -293,7 +455,7 @@ def run(
             facts_path=resolved_facts,
             jd_text=jd_text,
         ):
-            # New items landed in facts_bank.yaml; re-invoke the graph so
+            # New items landed in facts_bank.yaml; re-invoke the tailor graph so
             # load_master → optimize_content picks them up.
             console.print("[cyan]Re-running optimization with enriched facts...[/cyan]")
             if resolved_facts is None:
@@ -301,7 +463,26 @@ def run(
                 resolved_facts = DEFAULT_FACTS_PATH
                 initial["facts_path"] = str(resolved_facts)
             with Status("[bold cyan]Re-running pipeline...", console=console):
-                result = graph.invoke(initial)
+                result = tailor_graph.invoke(initial)
+
+    # --- #78: iterative approval loop — user gates each tailored version and
+    # grows facts_bank with LLM-proposed edits until the ATS score meets their
+    # bar or the iteration cap fires. Headless runs (--no-approve / non-TTY)
+    # skip the loop and render the first tailored version as-is.
+    if _should_run_approval_loop(result, no_approve=no_approve):
+        effective_max_iter = (
+            max_iter if max_iter is not None else get_settings().resume_max_iterations
+        )
+        result = _run_approval_loop(
+            tailor_graph=tailor_graph,
+            initial_result=result,
+            initial_input=initial,
+            max_iterations=effective_max_iter,
+        )
+
+    # Finalize: generate PDF + write results/diff/yaml once, from the final state.
+    with Status("[bold cyan]Rendering PDF and writing outputs...", console=console):
+        result = finalize_graph.invoke(result)
 
     errors: list[str] = result.get("errors", [])
     if errors:

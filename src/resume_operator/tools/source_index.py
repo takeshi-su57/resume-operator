@@ -49,29 +49,51 @@ class SourceIndex:
 
 
 def build_source_index(master: ResumeMaster, facts: FactsBank | None) -> SourceIndex:
-    """Build a `SourceIndex` covering every citable item on the master + facts bank."""
-    idx = SourceIndex()
+    """Build a `SourceIndex` covering every citable item on the master + facts bank.
 
-    if master.summary:
+    When a facts-bank item declares `overrides: "master:..."`, the shadowed master
+    entry is **hidden** from the index (#78). This lets the user approve a polished
+    rewrite of a master bullet without duplicating it in the tailor's prompt menu —
+    the tailor sees exactly one entry per thought: the override if present, else
+    the original. Master is never mutated; deleting the fact resurfaces the original.
+    """
+    idx = SourceIndex()
+    shadowed = _shadowed_master_ids(facts)
+
+    if master.summary and "master:summary" not in shadowed:
         _add(idx, "master:summary", master.summary, "summary")
 
     for exp in master.experience:
-        header = f"{exp.role} @ {exp.company}".strip(" @")
-        _add(idx, f"master:{exp.id}", header, "experience-header")
+        header_id = f"master:{exp.id}"
+        if header_id not in shadowed:
+            header = f"{exp.role} @ {exp.company}".strip(" @")
+            _add(idx, header_id, header, "experience-header")
         for bullet in exp.bullets:
-            _add(idx, f"master:{bullet.id}", bullet.text, "experience-bullet")
+            bullet_id = f"master:{bullet.id}"
+            if bullet_id in shadowed:
+                continue
+            _add(idx, bullet_id, bullet.text, "experience-bullet")
 
     for edu in master.education:
+        edu_id = f"master:{edu.id}"
+        if edu_id in shadowed:
+            continue
         text = f"{edu.degree} — {edu.school}".strip(" —")
-        _add(idx, f"master:{edu.id}", text, "education")
+        _add(idx, edu_id, text, "education")
 
     # #68: skill groups and the legacy flat list both get flattened into the
     # index so tailor fabrication-guard IDs stay `master:skill:<name>` either way.
     for skill in master.all_skills():
-        _add(idx, f"master:skill:{skill}", skill, "skill")
+        sid = f"master:skill:{skill}"
+        if sid in shadowed:
+            continue
+        _add(idx, sid, skill, "skill")
 
     for cert in master.certifications:
-        _add(idx, f"master:cert:{cert}", cert, "certification")
+        sid = f"master:cert:{cert}"
+        if sid in shadowed:
+            continue
+        _add(idx, sid, cert, "certification")
 
     if facts is not None:
         for project in facts.projects:
@@ -85,6 +107,21 @@ def build_source_index(master: ResumeMaster, facts: FactsBank | None) -> SourceI
             _add(idx, f"facts:cert:{cert}", cert, "certification")
 
     return idx
+
+
+def _shadowed_master_ids(facts: FactsBank | None) -> set[str]:
+    """Collect `master:...` source_ids that a facts-bank item explicitly overrides (#78).
+
+    Only items that a user has opted into via the `overrides` field are shadowed;
+    facts-bank items with no `overrides` set leave master untouched.
+    """
+    if facts is None:
+        return set()
+    shadowed: set[str] = set()
+    for fi in (*facts.projects, *facts.extra_bullets):
+        if fi.overrides:
+            shadowed.add(fi.overrides)
+    return shadowed
 
 
 def _add(idx: SourceIndex, source_id: str, text: str, kind: str) -> None:
