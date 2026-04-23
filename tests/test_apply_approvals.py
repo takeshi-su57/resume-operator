@@ -198,6 +198,97 @@ class TestNewFact:
         assert bank.projects[0].overrides == ""
 
 
+class TestNewSkill:
+    """#80: `new_skill` proposals land in `facts_bank.skills_beyond_master`
+    (not extra_bullets / projects) and dedupe against master + facts."""
+
+    def test_appends_bare_skill_name(self, tmp_path: Path) -> None:
+        path = tmp_path / "facts.yaml"
+        state = _state_with_facts(
+            path,
+            FactsBank(),
+            [
+                Proposal(
+                    kind="new_skill",
+                    grounding_source_id="master:exp-1",
+                    proposed_text="Kubernetes",
+                    rationale="JD wants K8s; master:exp-1 describes microservices",
+                )
+            ],
+        )
+        apply_approvals(state)
+
+        bank = load_facts(path)
+        # Skill landed in the flat list, NOT in extra_bullets or projects.
+        assert bank.skills_beyond_master == ["Kubernetes"]
+        assert bank.extra_bullets == []
+        assert bank.projects == []
+
+    def test_dedupe_against_existing_facts_skill(self, tmp_path: Path) -> None:
+        path = tmp_path / "facts.yaml"
+        starting_bank = FactsBank(skills_beyond_master=["Kubernetes"])
+        state = _state_with_facts(
+            path,
+            starting_bank,
+            [
+                Proposal(
+                    kind="new_skill",
+                    grounding_source_id="master:exp-1",
+                    proposed_text="Kubernetes",
+                )
+            ],
+        )
+        apply_approvals(state)
+
+        bank = load_facts(path)
+        # No duplicate entry — single Kubernetes.
+        assert bank.skills_beyond_master == ["Kubernetes"]
+
+    def test_dedupe_against_master_skill(self) -> None:
+        """Skills already on the master shouldn't get re-added to facts."""
+        import tempfile
+
+        from resume_operator.state import ResumeMaster
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "facts.yaml"
+            save_facts(FactsBank(), path)
+            state = ResumeOptimizerState(
+                facts_path=str(path),
+                facts=FactsBank(),
+                master=ResumeMaster(skills=["Kubernetes"]),
+                approved_proposals=[
+                    Proposal(
+                        kind="new_skill",
+                        grounding_source_id="master:exp-1",
+                        proposed_text="Kubernetes",
+                    )
+                ],
+            )
+            apply_approvals(state)
+            bank = load_facts(path)
+            # Not added — already on master. facts stays clean.
+            assert bank.skills_beyond_master == []
+
+    def test_empty_skill_text_is_skipped(self, tmp_path: Path) -> None:
+        path = tmp_path / "facts.yaml"
+        state = _state_with_facts(
+            path,
+            FactsBank(),
+            [
+                Proposal(
+                    kind="new_skill",
+                    grounding_source_id="master:exp-1",
+                    proposed_text="   ",
+                )
+            ],
+        )
+        apply_approvals(state)
+
+        bank = load_facts(path)
+        assert bank.skills_beyond_master == []
+
+
 class TestIdMinting:
     def test_minted_ids_are_unique_across_additions(self, tmp_path: Path) -> None:
         path = tmp_path / "facts.yaml"
