@@ -156,13 +156,95 @@ class JobDescription(BaseModel):
     raw_text: str = ""
 
 
-class ATSScore(BaseModel):
-    """ATS compatibility score and analysis."""
+class ContactCheck(BaseModel):
+    """#81: which contact fields the resume surfaces — what industry ATS
+    reviewers flag for completeness."""
 
+    email_present: bool = False
+    phone_present: bool = False
+    address_present: bool = False
+
+
+class SectionCheck(BaseModel):
+    """#81: presence of the four canonical resume sections."""
+
+    summary: bool = False
+    experience: bool = False
+    education: bool = False
+    skills: bool = False
+
+
+class JobTitleMatch(BaseModel):
+    """#81: whether the JD's job title appears on the resume. ATS keyword
+    scanners weight exact-title matches heavily — missing it drops rank."""
+
+    exact_match: bool = False
+    partial_match: bool = False  # substring / fuzzy
+    jd_title: str = ""
+    resume_titles: list[str] = Field(default_factory=list)
+
+
+class SkillCountRow(BaseModel):
+    """One row in the hard-skill or soft-skill comparison table — the side-by-side
+    count of a skill mention on the resume vs. in the JD."""
+
+    name: str
+    resume_count: int = 0
+    jd_count: int = 0
+
+
+class ToneFlag(BaseModel):
+    """A cliche or negative phrase flagged for rewrite ("results-driven",
+    "passionate about", …)."""
+
+    phrase: str
+    line: str = ""
+    suggestion: str = ""
+
+
+class ATSReport(BaseModel):
+    """Multi-dimensional ATS compatibility report (#81) — replaces the single
+    ATSScore float while preserving its fields as back-compat aliases.
+
+    Dimensions split into:
+      - structural (deterministic): contact, sections, job title, word count,
+        measurable-results count
+      - keyword (LLM-extracted, then compared): hard_skills, soft_skills
+      - qualitative (LLM): tone_flags, level_match_reasoning
+      - composite (derived): ``score`` is a weighted sum exposed for the #44
+        skip gate and per-iteration display.
+    """
+
+    # Composite numeric score — derived, same 0.0-1.0 contract as the old ATSScore.
     score: float = 0.0
+    # Prose summary the CLI renders alongside the table.
     reasoning: str = ""
+
+    # Structural checks (deterministic).
+    contact: ContactCheck = Field(default_factory=ContactCheck)
+    sections: SectionCheck = Field(default_factory=SectionCheck)
+    job_title: JobTitleMatch = Field(default_factory=JobTitleMatch)
+    measurable_results_count: int = 0
+    word_count: int = 0
+    word_count_ok: bool = False  # within 400-1000
+
+    # Keyword analysis (LLM-extracted, deterministic comparison).
+    hard_skills: list[SkillCountRow] = Field(default_factory=list)
+    soft_skills: list[SkillCountRow] = Field(default_factory=list)
+
+    # Qualitative (LLM).
+    tone_flags: list[ToneFlag] = Field(default_factory=list)
+    level_match_reasoning: str = ""
+
+    # Back-compat for #78 and earlier callers that expect these fields on the ATS object.
+    # Populated by the orchestrator from hard_skills + soft_skills.
     keyword_matches: list[str] = Field(default_factory=list)
     keyword_gaps: list[str] = Field(default_factory=list)
+
+
+# Back-compat alias — pre-#81 code imports `ATSScore`. One-release deprecation
+# window, then remove in the release after.
+ATSScore = ATSReport
 
 
 class GapAnalysis(BaseModel):

@@ -1,106 +1,165 @@
-"""Tests for the ats_score node."""
+"""Tests for the ats_score node (#81 multi-dimensional orchestrator).
+
+Mocks the three sub-passes (`check_contact`/etc. are pure, but we mock
+the LLM-facing `extract_keywords` and `check_tone` to keep tests
+deterministic). Assertions focus on the assembled `ATSReport` — field
+presence, composite-score clamping, empty-resume short-circuit.
+"""
 
 from unittest.mock import MagicMock, patch
 
-from pydantic import ValidationError
-
-from resume_operator.nodes.ats_score import ATSScoreLLMOutput, ats_score
-from resume_operator.state import ResumeOptimizerState
-
-
-def _make_llm(return_value: object | Exception) -> MagicMock:
-    mock_llm = MagicMock()
-    if isinstance(return_value, Exception):
-        mock_llm.invoke.side_effect = return_value
-    else:
-        mock_llm.invoke.return_value = return_value
-    return mock_llm
+from resume_operator.nodes.ats_score import ats_score, ats_score_tailored
+from resume_operator.state import (
+    ATSReport,
+    ResumeOptimizerState,
+    SkillCountRow,
+    TailoredItem,
+    TailoredResume,
+    ToneFlag,
+)
 
 
-class TestAtsScore:
-    @patch("resume_operator.nodes.ats_score.get_structured_llm")
-    def test_scores_resume_successfully(
-        self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
+def _patch_llm_passes(
+    *,
+    hard: list[SkillCountRow] | None = None,
+    soft: list[SkillCountRow] | None = None,
+    tone: list[ToneFlag] | None = None,
+) -> tuple[MagicMock, MagicMock]:
+    """Configure mocked return values for the two LLM-facing passes."""
+    hard_out = hard if hard is not None else []
+    soft_out = soft if soft is not None else []
+    tone_out = tone if tone is not None else []
+    return (hard_out, soft_out), tone_out
+
+
+class TestAtsScoreOrchestrator:
+    @patch("resume_operator.nodes.ats_score.check_tone")
+    @patch("resume_operator.nodes.ats_score.extract_keywords")
+    def test_assembles_full_report(
+        self,
+        mock_extract: MagicMock,
+        mock_tone: MagicMock,
+        sample_state: ResumeOptimizerState,
     ) -> None:
-        mock_get_llm.return_value = _make_llm(
-            ATSScoreLLMOutput(
-                score=0.85,
-                reasoning="Strong Python and AWS match, missing Kubernetes experience.",
-                keyword_matches=["Python", "AWS", "microservices"],
-                keyword_gaps=["Kubernetes", "CI/CD"],
-            )
-        )
+        hard = [
+            SkillCountRow(name="Python", resume_count=3, jd_count=2),
+            SkillCountRow(name="Kubernetes", resume_count=0, jd_count=3),
+        ]
+        soft = [SkillCountRow(name="Mentoring", resume_count=1, jd_count=1)]
+        mock_extract.return_value = (hard, soft)
+        mock_tone.return_value = [ToneFlag(phrase="results-driven", line="x", suggestion="y")]
 
         result = ats_score(sample_state)
 
         assert "ats_score" in result
-        assert result["ats_score"].score == 0.85
-        assert result["ats_score"].keyword_matches == ["Python", "AWS", "microservices"]
-        assert result["ats_score"].keyword_gaps == ["Kubernetes", "CI/CD"]
+        report: ATSReport = result["ats_score"]
+        # Structural checks ran.
+        assert report.word_count > 0
+        # Keyword tables are on the report.
+        assert len(report.hard_skills) == 2
+        assert len(report.soft_skills) == 1
+        # Back-compat fields derived.
+        assert "Python" in report.keyword_matches
+        assert "Kubernetes" in report.keyword_gaps
+        # Tone flag flowed through.
+        assert len(report.tone_flags) == 1
+        assert report.tone_flags[0].phrase == "results-driven"
+        # Composite is a float in [0, 1].
+        assert 0.0 <= report.score <= 1.0
 
-    @patch("resume_operator.nodes.ats_score.get_structured_llm")
-    def test_handles_llm_error(
-        self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
+    @patch("resume_operator.nodes.ats_score.check_tone")
+    @patch("resume_operator.nodes.ats_score.extract_keywords")
+    def test_composite_with_perfect_inputs_is_near_one(
+        self,
+        mock_extract: MagicMock,
+        mock_tone: MagicMock,
+        sample_state: ResumeOptimizerState,
     ) -> None:
-        mock_get_llm.return_value = _make_llm(RuntimeError("API error"))
+        """A resume that covers every JD skill, has a perfect title match, all
+        contact fields, all sections, in-range word count, and zero tone flags
+        should approach 1.0 (modulo measurable-results which depends on raw text).
+        """
+        hard = [SkillCountRow(name="Python", resume_count=3, jd_count=1)]
+        soft = [SkillCountRow(name="Mentoring", resume_count=1, jd_count=1)]
+        mock_extract.return_value = (hard, soft)
+        mock_tone.return_value = []
+        # Give the master a job-title exact match by crafting the JD to contain it.
+        sample_state.job_description.raw_text = (
+            "Position: Senior Engineer\n\nWe want Python and mentoring."
+        )
 
         result = ats_score(sample_state)
+        report: ATSReport = result["ats_score"]
+        assert report.job_title.exact_match
+        assert report.hard_skills[0].name == "Python"
+        # Composite should reflect the strong match — at least 0.6 even with
+        # measurable_results contributing sub-optimally.
+        assert report.score >= 0.6
 
-        assert "errors" in result
-        assert any("LLM call failed" in e for e in result["errors"])
-        assert "ats_score" not in result
-
-    @patch("resume_operator.nodes.ats_score.get_structured_llm")
-    def test_handles_schema_validation_error(
-        self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
+    @patch("resume_operator.nodes.ats_score.check_tone")
+    @patch("resume_operator.nodes.ats_score.extract_keywords")
+    def test_llm_failure_still_produces_report(
+        self,
+        mock_extract: MagicMock,
+        mock_tone: MagicMock,
+        sample_state: ResumeOptimizerState,
     ) -> None:
-        try:
-            ATSScoreLLMOutput.model_validate({"score": "nope", "reasoning": "x"})
-        except ValidationError as exc:
-            mock_get_llm.return_value = _make_llm(exc)
+        """When both LLM passes fail and return empty, the node still assembles
+        a report from structural checks alone — composite is lower but valid.
+        """
+        mock_extract.return_value = ([], [])
+        mock_tone.return_value = []
 
         result = ats_score(sample_state)
+        assert "ats_score" in result
+        report: ATSReport = result["ats_score"]
+        assert report.hard_skills == []
+        assert report.soft_skills == []
+        # Structural half still fills in.
+        assert 0.0 <= report.score <= 1.0
 
-        assert "errors" in result
-        assert any("schema-invalid" in e for e in result["errors"])
-        assert "ats_score" not in result
-
-    @patch("resume_operator.nodes.ats_score.get_structured_llm")
-    def test_clamps_score_above_one(
-        self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
-    ) -> None:
-        mock_get_llm.return_value = _make_llm(ATSScoreLLMOutput(score=1.5, reasoning="x"))
-
-        result = ats_score(sample_state)
-
-        assert result["ats_score"].score == 1.0
-
-    @patch("resume_operator.nodes.ats_score.get_structured_llm")
-    def test_clamps_score_below_zero(
-        self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
-    ) -> None:
-        mock_get_llm.return_value = _make_llm(ATSScoreLLMOutput(score=-0.5, reasoning="x"))
-
-        result = ats_score(sample_state)
-
-        assert result["ats_score"].score == 0.0
-
-    @patch("resume_operator.nodes.ats_score.get_structured_llm")
-    def test_returns_only_changed_fields(
-        self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
-    ) -> None:
-        mock_get_llm.return_value = _make_llm(ATSScoreLLMOutput(score=0.5, reasoning="x"))
-
-        result = ats_score(sample_state)
-
-        allowed_keys = {"ats_score", "errors"}
-        assert set(result.keys()).issubset(allowed_keys)
-
-    def test_empty_resume_data(self, sample_state: ResumeOptimizerState) -> None:
-        """Skips scoring when resume data is empty."""
+    def test_empty_resume_data_short_circuits(self, sample_state: ResumeOptimizerState) -> None:
         sample_state.resume.raw_text = ""
         result = ats_score(sample_state)
-
         assert "errors" in result
         assert any("resume data is empty" in e for e in result["errors"])
         assert "ats_score" not in result
+
+
+class TestAtsScoreTailored:
+    @patch("resume_operator.nodes.ats_score.check_tone")
+    @patch("resume_operator.nodes.ats_score.extract_keywords")
+    def test_scores_tailored_text_not_master(
+        self,
+        mock_extract: MagicMock,
+        mock_tone: MagicMock,
+        sample_state: ResumeOptimizerState,
+    ) -> None:
+        mock_extract.return_value = (
+            [SkillCountRow(name="Python", resume_count=1, jd_count=1)],
+            [],
+        )
+        mock_tone.return_value = []
+        sample_state.tailored_resume = TailoredResume(
+            items=[
+                TailoredItem(
+                    source_id="master:exp-1-b1",
+                    action="reword",
+                    new_text="Tailored Python-leading bullet",
+                )
+            ],
+            tailored_summary="Tailored summary",
+        )
+
+        result = ats_score_tailored(sample_state)
+        assert "ats_score" in result
+        # The orchestrator rendered the tailored text and passed it to
+        # extract_keywords — we can verify via the call args.
+        sent_resume_text = mock_extract.call_args.args[0]
+        assert "Tailored summary" in sent_resume_text
+        assert "Tailored Python-leading bullet" in sent_resume_text
+
+    def test_no_tailored_items_is_noop(self, sample_state: ResumeOptimizerState) -> None:
+        sample_state.tailored_resume = TailoredResume(items=[])
+        result = ats_score_tailored(sample_state)
+        assert result == {}

@@ -77,10 +77,12 @@ If a `--facts <yaml>` path is provided (or `data/facts_bank.yaml` exists), the f
 
 ## Conditional Routing
 
-After `ats_score`, a routing function checks the score against `ATS_SKIP_THRESHOLD` (configurable, default 0.9):
+After `ats_score`, a routing function checks the composite score against `ATS_SKIP_THRESHOLD` (configurable, default 0.9) AND the per-dimension health of the `ATSReport` (#81):
 
-- **Score >= threshold**: Skip optimization — route directly to `report_results`. The report notes `optimization_skipped: true`.
-- **Score < threshold**: Normal path — continue through `analyze_gaps`, `optimize_content`, `generate_pdf`, then `report_results`.
+- **Composite ≥ threshold AND hard-skill coverage ≥ 0.7 AND structural signal ≥ 0.5 AND the LLM keyword extractor returned non-empty tables**: Skip optimization — route directly to `report_results`. The report notes `optimization_skipped: true`.
+- **Otherwise**: Normal path — continue through `analyze_gaps`, `optimize_content`, `generate_pdf`, then `report_results`.
+
+The sub-dimension check is deliberate: a single high composite can mask a degraded report. Pre-#81, a garbage LLM response returning `score=1.00` with empty keyword data falsely skipped optimization; the hardened gate now requires LLM keyword data to trust the composite.
 
 ## Components
 
@@ -129,6 +131,8 @@ All four are optional; older YAMLs without them fall back gracefully (no headlin
 **Dynamic headline (#70)**: `TailoredResume.tailored_headline` is a fresh JD-crafted tagline written by the optimizer every run, alongside `tailored_summary`. Grounded strictly in master facts (titles, years, companies, tech) — no invented "Ex-Google". Same accept/reject fabrication-safety shape as the summary. When non-empty it replaces `master.headline` in the rendered PDF.
 
 **StyleTemplate (#72)**: every visual knob the renderer used to hardcode (font family, sizes, colours, margins, spacing, rule thickness, bullet glyph) now lives in a `StyleTemplate` Pydantic model serialised to YAML. `tools/style.py` defines the schema, loads from YAML, registers TTF fonts on demand, and builds ReportLab `ParagraphStyle` objects. `tools/style_from_docx.py` walks a reference `.docx` and emits a StyleTemplate YAML mirroring its named-style choices (font family, sizes, colours, margins). CLI surface: `extract-style --from <ref.docx> --output <style.yaml>` produces the YAML; `run --style <path>` applies it. Precedence: CLI flag → `RESUME_STYLE_PATH` env → `input/style.default.yaml` → code defaults.
+
+**Multi-dimensional ATS scoring (#81)**: `ats_score` and `ats_score_tailored` no longer return a single LLM-derived float. They orchestrate three passes: (1) deterministic structural checks — contact info, section headings, job-title match, word count, measurable-results count (regex-based, no LLM); (2) a single-call LLM **keyword extractor** (`tools/ats_keyword_extractor.py`) that returns side-by-side `SkillCountRow` tables for hard + soft skills with `resume_count` / `jd_count` per entry; (3) a single-call LLM **tone checker** (`tools/ats_tone_checker.py`) that flags cliches and vague positives. The composite `score` is a weighted sum over six sub-scores (hard 40% · soft 20% · structural 15% · title 10% · measurable 10% · tone 5%) with each weight configurable via `ATS_WEIGHT_*` env vars. LLM sub-pass failures are absorbed silently — the report falls back to the structural dimensions alone. The pre-#81 `ATSScore` name remains as a back-compat alias for one release.
 
 **Iterative approval loop (#78)** — see [docs/guides/iterative-tailor-approval.md](guides/iterative-tailor-approval.md) for the user-facing walkthrough. After the first tailor pass, `run` enters a user-driven loop (unless `--no-approve` is set or stdin isn't a TTY). Each iteration shows the ATS score on the current tailored output and offers Accept → done / Reject → continue / cap-reached → "continue anyway?". On continue, `propose_changes` asks the LLM for up to 5 grounded proposals of four kinds:
 - `rewrite_master` — polishes an existing master bullet; when approved, lands in `facts_bank.extra_bullets` with `overrides: "master:exp-..."` set. The next tailor iteration's `build_source_index` hides the shadowed master entry, so the prompt menu and rendered PDF see exactly one version per thought. Zero duplication, and **`master_resume.yaml` stays hand-authored and read-only** — every accepted change lands in facts_bank.

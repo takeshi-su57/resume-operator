@@ -117,8 +117,9 @@ uv run python -m resume_operator run --master data/master_resume.yaml --facts da
 | `GOOGLE_API_KEY` | — | Google AI API key |
 | `OPENROUTER_API_KEY` | — | OpenRouter API key |
 | `LOG_LEVEL` | `INFO` | Logging level |
-| `ATS_SKIP_THRESHOLD` | `0.9` | Skip optimization entirely when the initial ATS score is at or above this. |
+| `ATS_SKIP_THRESHOLD` | `0.9` | Skip optimization entirely when the composite ATS score is at or above this AND every sub-dimension is healthy (#81). |
 | `RESUME_MAX_ITERATIONS` | `3` | Cap on the #78 approval loop before the "continue anyway?" prompt fires. |
+| `ATS_WEIGHT_HARD` / `_SOFT` / `_STRUCTURAL` / `_TITLE` / `_MEASURABLE` / `_TONE` | `0.40` / `0.20` / `0.15` / `0.10` / `0.10` / `0.05` | #81 ATSReport composite weights; sum to 1.0 by default. Bump one when a JD emphasizes it over the baseline. |
 | `RESUME_STYLE_PATH` | — | Path to a StyleTemplate YAML; overridden by `run --style <path>`. |
 | `RESUME_TEMPLATE` | `default` | PDF render template (`default` only today). |
 

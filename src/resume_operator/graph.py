@@ -33,27 +33,89 @@ from resume_operator.nodes.load_master import load_master_node
 from resume_operator.nodes.optimize_content import optimize_content
 from resume_operator.nodes.parse_resume import parse_resume
 from resume_operator.nodes.report_results import report_results
-from resume_operator.state import ResumeOptimizerState
+from resume_operator.state import ATSReport, ResumeOptimizerState, SkillCountRow
 
 logger = logging.getLogger(__name__)
 
 
 def _route_after_ats_score(state: ResumeOptimizerState) -> str:
-    """Route based on ATS score: skip optimization if score is high enough."""
+    """Route based on ATS score: skip optimization if composite is high AND
+    every critical sub-dimension is healthy (#81).
+
+    Critical dimensions:
+      - hard-skill coverage ≥ 0.7 — the JD's technical asks are mostly present
+      - at least some keyword data from the LLM extractor — protects against
+        the "garbage LLM response claims 1.0" path seen pre-#81
+      - structural_sub ≥ 0.5 — contact / sections / word-count reasonable
+
+    If the composite meets the skip threshold but any critical dimension is
+    low, we proceed with optimization anyway — the composite is misleading.
+    """
     threshold = get_settings().ats_skip_threshold
-    if state.ats_score.score >= threshold:
+    report = state.ats_score
+    composite = report.score
+
+    if composite < threshold:
         logger.info(
-            "Routing: ATS score %.2f >= threshold %.2f — skipping optimization",
-            state.ats_score.score,
+            "Routing: composite %.2f < threshold %.2f — proceeding with optimization",
+            composite,
             threshold,
         )
-        return "skip"
+        return "optimize"
+
+    # Composite is high enough — but check the sub-dimensions aren't hiding
+    # a degraded report.
+    hard_coverage = _coverage_ratio(report.hard_skills)
+    structural_ok = _structural_signal(report)
+    has_llm_data = bool(report.hard_skills) or bool(report.soft_skills)
+
+    if not has_llm_data:
+        logger.info(
+            "Routing: composite %.2f >= threshold but no LLM keyword data — "
+            "proceeding with optimization (degraded ATS report)",
+            composite,
+        )
+        return "optimize"
+    if hard_coverage < 0.7 or structural_ok < 0.5:
+        logger.info(
+            "Routing: composite %.2f >= threshold but sub-dimensions weak "
+            "(hard_coverage=%.2f, structural=%.2f) — proceeding with optimization",
+            composite,
+            hard_coverage,
+            structural_ok,
+        )
+        return "optimize"
+
     logger.info(
-        "Routing: ATS score %.2f < threshold %.2f — proceeding with optimization",
-        state.ats_score.score,
+        "Routing: composite %.2f >= threshold %.2f, sub-dimensions healthy — skipping optimization",
+        composite,
         threshold,
     )
-    return "optimize"
+    return "skip"
+
+
+def _coverage_ratio(hard_skills: list[SkillCountRow]) -> float:
+    jd_asked = [r for r in hard_skills if r.jd_count >= 1]
+    if not jd_asked:
+        return 0.0  # no JD signal — can't vouch for coverage
+    matched = sum(1 for r in jd_asked if r.resume_count >= 1)
+    return matched / len(jd_asked)
+
+
+def _structural_signal(report: ATSReport) -> float:
+    """Same 8-boolean average `ats_score` uses; duplicated here so the graph
+    doesn't import the orchestrator (keeps node dependencies one-way)."""
+    flags = [
+        report.contact.email_present,
+        report.contact.phone_present,
+        report.contact.address_present,
+        report.sections.summary,
+        report.sections.experience,
+        report.sections.education,
+        report.sections.skills,
+        report.word_count_ok,
+    ]
+    return sum(1 for f in flags if f) / len(flags)
 
 
 def _route_input(state: ResumeOptimizerState) -> str:
