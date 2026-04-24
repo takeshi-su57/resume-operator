@@ -50,9 +50,7 @@ def check_contact(master: ResumeMaster, text: str) -> ContactCheck:
     email = bool(master.email.strip()) or bool(_EMAIL_RE.search(text))
     phone = bool(master.phone.strip()) or bool(_PHONE_RE.search(text))
     address = bool(master.location.strip()) or bool(_ADDRESS_HINT_RE.search(text))
-    return ContactCheck(
-        email_present=email, phone_present=phone, address_present=address
-    )
+    return ContactCheck(email_present=email, phone_present=phone, address_present=address)
 
 
 # --- Section headings ----------------------------------------------------
@@ -69,9 +67,7 @@ _SECTION_PATTERNS = {
         re.IGNORECASE | re.MULTILINE,
     ),
     "education": re.compile(r"^\s*education\b", re.IGNORECASE | re.MULTILINE),
-    "skills": re.compile(
-        r"^\s*(technical\s+|core\s+)?skills\b", re.IGNORECASE | re.MULTILINE
-    ),
+    "skills": re.compile(r"^\s*(technical\s+|core\s+)?skills\b", re.IGNORECASE | re.MULTILINE),
 }
 
 
@@ -80,8 +76,7 @@ def check_sections(master: ResumeMaster, text: str) -> SectionCheck:
     contains a canonical heading for it."""
     return SectionCheck(
         summary=bool(master.summary.strip()) or bool(_SECTION_PATTERNS["summary"].search(text)),
-        experience=bool(master.experience)
-        or bool(_SECTION_PATTERNS["experience"].search(text)),
+        experience=bool(master.experience) or bool(_SECTION_PATTERNS["experience"].search(text)),
         education=bool(master.education) or bool(_SECTION_PATTERNS["education"].search(text)),
         skills=bool(master.all_skills() if master else [])
         or bool(_SECTION_PATTERNS["skills"].search(text)),

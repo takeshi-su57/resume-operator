@@ -58,8 +58,6 @@ def check_tone(resume_text: str) -> list[ToneFlag]:
         phrase = r.phrase.strip()
         if not phrase:
             continue
-        flags.append(
-            ToneFlag(phrase=phrase, line=r.line.strip(), suggestion=r.suggestion.strip())
-        )
+        flags.append(ToneFlag(phrase=phrase, line=r.line.strip(), suggestion=r.suggestion.strip()))
     logger.info("check_tone: completed — flags=%d", len(flags))
     return flags

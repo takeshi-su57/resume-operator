@@ -32,7 +32,7 @@ src/resume_operator/         → Main Python package
   nodes/                     → Graph node functions (one per file)
     load_master.py           → Read master_resume.yaml into state (no LLM)
     parse_resume.py          → Legacy: PDF → ResumeData via LLM
-    ats_score.py             → Score ATS (master + ats_score_tailored for tailored output)
+    ats_score.py             → Multi-dimensional ATS scoring orchestrator (#81)
     analyze_gaps.py          → Identify gaps, strengths, improvement suggestions
     optimize_content.py      → LLM-based per-item tailoring with fabrication guard
     propose_changes.py       → #78 LLM proposals (rewrite_master / rewrite_fact / new_fact)
@@ -45,6 +45,9 @@ src/resume_operator/         → Main Python package
     source_index.py          → Fabrication-guard index (honors `overrides` field)
     approval_flow.py         → #78 three-button + Fix-loop approval UX
     enrich.py                → Interactive interview helper (LLM asks, user answers)
+    ats_checks.py            → #81 deterministic structural checks (contact / sections / title)
+    ats_keyword_extractor.py → #81 hard/soft skill table via single LLM call
+    ats_tone_checker.py      → #81 cliche / vague-positive flags via single LLM call
     pdf_parser.py            → PyMuPDF text extraction
     pdf_generator.py         → ReportLab PDF creation
     llm_provider.py          → LangChain model factory

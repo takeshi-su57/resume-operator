@@ -11,7 +11,6 @@ import pytest
 
 from resume_operator.state import (
     EducationEntry,
-    ExperienceBullet,
     ExperienceEntry,
     ResumeMaster,
 )
@@ -112,9 +111,7 @@ class TestJobTitleExtraction:
 
 class TestJobTitleMatch:
     def test_exact_match(self) -> None:
-        master = _master(
-            experience=[ExperienceEntry(id="exp-1", role="Senior Backend Engineer")]
-        )
+        master = _master(experience=[ExperienceEntry(id="exp-1", role="Senior Backend Engineer")])
         match = check_job_title(master, "Position: Senior Backend Engineer")
         assert match.exact_match
         assert not match.partial_match  # exact supersedes partial
