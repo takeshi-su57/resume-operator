@@ -1,70 +1,86 @@
-"""Node: Score resume ATS compatibility against job description."""
+"""Node: Score resume ATS compatibility against job description.
+
+Assembles the multi-dimensional `ATSReport` (#81) from three passes:
+
+  - `tools/ats_checks.py` — deterministic: contact info, sections, job
+    title match, word count, measurable-results count.
+  - `tools/ats_keyword_extractor.py` — single LLM call: hard-skill and
+    soft-skill tables with resume-vs-JD counts per skill.
+  - `tools/ats_tone_checker.py` — single LLM call: cliche / vague-
+    positive phrase flags.
+
+The composite `score` is a weighted sum over the above; weights are
+tunable via `Settings.ats_weight_*` env vars. The same orchestrator
+runs for both `ats_score` (scores the master resume, pre-tailor) and
+`ats_score_tailored` (scores the tailored output inside #78's loop).
+"""
 
 from __future__ import annotations
 
 import logging
 from typing import Any
 
-from pydantic import BaseModel, Field, ValidationError
-
-from resume_operator.prompts.ats_scoring import ATS_SCORE
-from resume_operator.state import ATSScore, ResumeOptimizerState
-from resume_operator.tools.llm_provider import get_structured_llm
+from resume_operator.config import get_settings
+from resume_operator.state import (
+    ATSReport,
+    ContactCheck,
+    JobTitleMatch,
+    ResumeOptimizerState,
+    SectionCheck,
+    SkillCountRow,
+)
+from resume_operator.tools.ats_checks import (
+    check_contact,
+    check_job_title,
+    check_sections,
+    count_measurable_results,
+    count_words,
+    word_count_ok,
+)
+from resume_operator.tools.ats_keyword_extractor import (
+    derive_matches_and_gaps,
+    extract_keywords,
+)
+from resume_operator.tools.ats_tone_checker import check_tone
 
 logger = logging.getLogger(__name__)
 
 
-class ATSScoreLLMOutput(BaseModel):
-    """Schema handed to `with_structured_output` — the LLM fills this in directly."""
-
-    score: float = Field(..., description="ATS compatibility score, 0.0 to 1.0")
-    reasoning: str = Field(..., description="Short justification of the score")
-    keyword_matches: list[str] = Field(default_factory=list)
-    keyword_gaps: list[str] = Field(default_factory=list)
+# Industry-standard target for measurable-results — normalize the count against
+# this when feeding it into the composite. More than 8 caps at 1.0.
+MEASURABLE_RESULTS_TARGET = 8
 
 
 def ats_score(state: ResumeOptimizerState) -> dict[str, Any]:
-    """Score how well the resume matches the job description for ATS systems.
-
-    Compares resume keywords, experience, and skills against job requirements.
-    Returns a score (0.0-1.0), keyword matches, keyword gaps, and reasoning.
-    """
+    """Score the master resume against the JD and produce a full `ATSReport`."""
     logger.info("ats_score: starting")
     errors: list[str] = list(state.errors)
 
     if not state.resume.raw_text:
-        logger.warning("ats_score: skipping — resume data is empty (parse_resume may have failed)")
+        logger.warning("ats_score: skipping — resume data is empty")
         errors.append("ats_score: skipping — resume data is empty")
         return {"errors": errors}
 
-    try:
-        parsed = _run_scoring(
-            resume_json=state.resume.model_dump_json(),
-            jd_text=state.job_description.raw_text,
-            label="ats_score",
-        )
-    except _ATSScoreError as failure:
-        errors.append(failure.error)
-        return {"errors": errors}
-
-    return _build_result(parsed, errors=errors, prior=state.errors, label="ats_score")
+    report = _build_report(state, resume_text=state.resume.raw_text, label="ats_score")
+    logger.info(
+        "ats_score: completed — composite=%.2f, hard=%d, soft=%d, tone_flags=%d",
+        report.score,
+        len(report.hard_skills),
+        len(report.soft_skills),
+        len(report.tone_flags),
+    )
+    return {"ats_score": report}
 
 
 def ats_score_tailored(state: ResumeOptimizerState) -> dict[str, Any]:
     """Score the tailored output against the JD (#78 iterative loop).
 
-    Unlike `ats_score` (which scores the raw master), this node scores what
-    the candidate would see in the generated PDF: kept/reworded items from
-    `state.tailored_resume`, with the dedicated tailored headline + summary
-    when present. The resulting score is what the user's accept/continue
-    gate in the CLI reads.
-
-    When no tailored items exist (optimization skipped or failed) the node
-    leaves `state.ats_score` alone so the caller still sees the initial
-    master-based score.
+    Same orchestrator as `ats_score`, fed a text rendering of the tailored
+    resume instead of the raw master. When no tailored items exist
+    (optimization skipped or failed) the node leaves `state.ats_score` alone
+    so the caller still sees the initial master-based score.
     """
     logger.info("ats_score_tailored: starting")
-    errors: list[str] = list(state.errors)
 
     if not state.tailored_resume.items:
         logger.info("ats_score_tailored: no tailored items — leaving prior ats_score untouched")
@@ -75,73 +91,180 @@ def ats_score_tailored(state: ResumeOptimizerState) -> dict[str, Any]:
         logger.warning("ats_score_tailored: rendered tailored text is empty — skipping")
         return {}
 
-    try:
-        parsed = _run_scoring(
-            resume_json=tailored_text,
-            jd_text=state.job_description.raw_text,
-            label="ats_score_tailored",
-        )
-    except _ATSScoreError as failure:
-        errors.append(failure.error)
-        return {"errors": errors}
-
-    return _build_result(parsed, errors=errors, prior=state.errors, label="ats_score_tailored")
-
-
-# --- internals ------------------------------------------------------------
-
-
-class _ATSScoreError(Exception):
-    def __init__(self, error: str) -> None:
-        super().__init__(error)
-        self.error = error
-
-
-def _run_scoring(*, resume_json: str, jd_text: str, label: str) -> ATSScoreLLMOutput:
-    """Call the ATS scoring LLM; raise `_ATSScoreError` on any failure so
-    both public entry points share the same error-recording shape.
-    """
-    try:
-        llm = get_structured_llm(ATSScoreLLMOutput)
-        prompt = ATS_SCORE.format(resume_json=resume_json, job_description=jd_text)
-        logger.debug("%s: LLM prompt: %s", label, prompt)
-        parsed: ATSScoreLLMOutput = llm.invoke(prompt)
-        logger.debug("%s: LLM response: %s", label, parsed.model_dump_json())
-        return parsed
-    except ValidationError as exc:
-        logger.error("%s: LLM returned schema-invalid data: %s", label, exc)
-        raise _ATSScoreError(f"{label}: LLM returned schema-invalid data: {exc}") from exc
-    except Exception as exc:
-        logger.error("%s: LLM call failed: %s", label, exc)
-        raise _ATSScoreError(f"{label}: LLM call failed: {exc}") from exc
-
-
-def _build_result(
-    parsed: ATSScoreLLMOutput, *, errors: list[str], prior: list[str], label: str
-) -> dict[str, Any]:
-    score = max(0.0, min(1.0, float(parsed.score)))
-    result_score = ATSScore(
-        score=score,
-        reasoning=parsed.reasoning,
-        keyword_matches=list(parsed.keyword_matches),
-        keyword_gaps=list(parsed.keyword_gaps),
-    )
+    report = _build_report(state, resume_text=tailored_text, label="ats_score_tailored")
     logger.info(
-        "%s: completed — score=%.2f, matches=%d, gaps=%d",
-        label,
-        result_score.score,
-        len(result_score.keyword_matches),
-        len(result_score.keyword_gaps),
+        "ats_score_tailored: completed — composite=%.2f, hard=%d, soft=%d, tone_flags=%d",
+        report.score,
+        len(report.hard_skills),
+        len(report.soft_skills),
+        len(report.tone_flags),
     )
-    result: dict[str, Any] = {"ats_score": result_score}
-    if errors != list(prior):
-        result["errors"] = errors
-    return result
+    return {"ats_score": report}
+
+
+# --- orchestrator ---------------------------------------------------------
+
+
+def _build_report(state: ResumeOptimizerState, *, resume_text: str, label: str) -> ATSReport:
+    """Run the three passes and assemble the composite score."""
+    jd_text = state.job_description.raw_text
+
+    # 1. Deterministic structural checks (no LLM).
+    contact = check_contact(state.master, resume_text)
+    sections = check_sections(state.master, resume_text)
+    job_title = check_job_title(state.master, jd_text)
+    measurable = count_measurable_results(resume_text)
+    wc = count_words(resume_text)
+    wc_ok = word_count_ok(wc)
+
+    # 2. LLM keyword extractor.
+    hard, soft = extract_keywords(resume_text, jd_text)
+    matches, gaps = derive_matches_and_gaps(hard, soft)
+
+    # 3. LLM tone checker.
+    tone_flags = check_tone(resume_text)
+
+    # 4. Composite score.
+    composite = _composite_score(
+        hard=hard,
+        soft=soft,
+        contact=contact,
+        sections=sections,
+        job_title=job_title,
+        measurable=measurable,
+        wc_ok=wc_ok,
+        tone_flags_count=len(tone_flags),
+    )
+    reasoning = _reasoning_summary(
+        composite=composite,
+        hard=hard,
+        soft=soft,
+        job_title=job_title,
+        measurable=measurable,
+    )
+
+    return ATSReport(
+        score=composite,
+        reasoning=reasoning,
+        contact=contact,
+        sections=sections,
+        job_title=job_title,
+        measurable_results_count=measurable,
+        word_count=wc,
+        word_count_ok=wc_ok,
+        hard_skills=hard,
+        soft_skills=soft,
+        tone_flags=tone_flags,
+        keyword_matches=matches,
+        keyword_gaps=gaps,
+    )
+
+
+def _composite_score(
+    *,
+    hard: list[SkillCountRow],
+    soft: list[SkillCountRow],
+    contact: ContactCheck,
+    sections: SectionCheck,
+    job_title: JobTitleMatch,
+    measurable: int,
+    wc_ok: bool,
+    tone_flags_count: int,
+) -> float:
+    """Weighted sum across the six sub-dimensions. Weights come from
+    `Settings.ats_weight_*` — defaults sum to 1.0.
+    """
+    settings = get_settings()
+    hard_sub = _coverage(hard)
+    soft_sub = _coverage(soft)
+    structural_sub = _structural_sub(contact, sections, wc_ok)
+    title_sub = _title_sub(job_title)
+    measurable_sub = (
+        min(1.0, measurable / MEASURABLE_RESULTS_TARGET) if MEASURABLE_RESULTS_TARGET else 0.0
+    )
+    # Tone subscore: 1.0 with zero flags, 0.6 at 3 flags, 0.0 past ~6.
+    tone_sub = max(0.0, 1.0 - (tone_flags_count * 0.15))
+
+    composite = (
+        settings.ats_weight_hard * hard_sub
+        + settings.ats_weight_soft * soft_sub
+        + settings.ats_weight_structural * structural_sub
+        + settings.ats_weight_title * title_sub
+        + settings.ats_weight_measurable * measurable_sub
+        + settings.ats_weight_tone * tone_sub
+    )
+    return max(0.0, min(1.0, composite))
+
+
+def _coverage(rows: list[SkillCountRow]) -> float:
+    """Fraction of JD-requested skills the resume actually mentions.
+
+    Denominator: skills where `jd_count >= 1`. Numerator: those same skills
+    where `resume_count >= 1`. Returns 1.0 when the JD asks for nothing
+    (no denominator) — the resume can't be faulted for missing what isn't
+    asked for.
+    """
+    jd_skills = [r for r in rows if r.jd_count >= 1]
+    if not jd_skills:
+        return 1.0
+    matched = sum(1 for r in jd_skills if r.resume_count >= 1)
+    return matched / len(jd_skills)
+
+
+def _structural_sub(contact: ContactCheck, sections: SectionCheck, wc_ok: bool) -> float:
+    """Average of 8 boolean dimensions: 3 contact + 4 section + word_count_ok."""
+    flags = [
+        contact.email_present,
+        contact.phone_present,
+        contact.address_present,
+        sections.summary,
+        sections.experience,
+        sections.education,
+        sections.skills,
+        wc_ok,
+    ]
+    return sum(1 for f in flags if f) / len(flags)
+
+
+def _title_sub(job_title: JobTitleMatch) -> float:
+    """Exact match scores 1.0; partial 0.5; no match 0.0."""
+    if job_title.exact_match:
+        return 1.0
+    if job_title.partial_match:
+        return 0.5
+    return 0.0
+
+
+def _reasoning_summary(
+    *,
+    composite: float,
+    hard: list[SkillCountRow],
+    soft: list[SkillCountRow],
+    job_title: JobTitleMatch,
+    measurable: int,
+) -> str:
+    """Short prose for the CLI — fills the ATSReport.reasoning field."""
+    top_gaps = [r.name for r in hard if r.jd_count >= 1 and r.resume_count == 0][:5]
+    top_matches = [r.name for r in hard if r.jd_count >= 1 and r.resume_count >= 1][:5]
+    parts: list[str] = [f"Composite {composite:.0%}."]
+    if job_title.exact_match:
+        parts.append("Job title exact match.")
+    elif job_title.partial_match:
+        parts.append("Job title partial match.")
+    elif job_title.jd_title:
+        parts.append(f"Job title '{job_title.jd_title}' not on resume.")
+    if top_matches:
+        parts.append(f"Hard-skill matches: {', '.join(top_matches)}.")
+    if top_gaps:
+        parts.append(f"Hard-skill gaps: {', '.join(top_gaps)}.")
+    parts.append(f"Measurable results count: {measurable}.")
+    return " ".join(parts)
 
 
 def _render_tailored_as_text(state: ResumeOptimizerState) -> str:
     """Flatten the tailored output into a plain-text resume — same shape
-    `ats_score` expects, so we can reuse the same LLM prompt.
+    `ats_score` consumes, so the orchestrator treats it identically to the
+    master resume text.
     """
     tailored = state.tailored_resume
     master = state.master
@@ -158,9 +281,6 @@ def _render_tailored_as_text(state: ResumeOptimizerState) -> str:
     if summary_text:
         lines.extend(["", "SUMMARY", summary_text])
 
-    # Group kept/reworded items by (kind, role) to reconstruct the rendered PDF's
-    # structure. We don't need perfect fidelity — just enough for the LLM to see
-    # what's on the page.
     bullets_by_role: dict[str, list[str]] = {}
     skills: list[str] = []
     certifications: list[str] = []
@@ -175,17 +295,12 @@ def _render_tailored_as_text(state: ResumeOptimizerState) -> str:
         elif item.source_id.startswith("master:edu-"):
             education.append(text)
         elif item.source_id.startswith("master:exp-"):
-            # bullets: master:exp-1-b2 → role_id "exp-1"
             body = item.source_id[len("master:") :]
             role_id = body.rsplit("-b", 1)[0] if "-b" in body else body
             bullets_by_role.setdefault(role_id, []).append(text)
         elif item.source_id == "master:summary":
-            # Summary was already captured above via tailored.tailored_summary path.
             continue
         else:
-            # facts bullets, projects, extras — fall into standalone unless the
-            # source index told us a role_id. We don't carry that through here;
-            # list them as standalone.
             standalone.append(text)
 
     if bullets_by_role:

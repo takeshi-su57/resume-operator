@@ -52,14 +52,16 @@ class TestGraphAssembly:
     @patch("resume_operator.nodes.generate_pdf.create_pdf")
     @patch("resume_operator.nodes.optimize_content.get_structured_llm")
     @patch("resume_operator.nodes.analyze_gaps.get_structured_llm")
-    @patch("resume_operator.nodes.ats_score.get_structured_llm")
+    @patch("resume_operator.nodes.ats_score.check_tone")
+    @patch("resume_operator.nodes.ats_score.extract_keywords")
     @patch("resume_operator.nodes.parse_resume.get_structured_llm")
     @patch("resume_operator.nodes.parse_resume.extract_text")
     def test_graph_runs_parse_resume(
         self,
         mock_extract: MagicMock,
         mock_parse_llm: MagicMock,
-        mock_ats_llm: MagicMock,
+        mock_ats_keywords: MagicMock,
+        mock_ats_tone: MagicMock,
         mock_gaps_llm: MagicMock,
         mock_optimize_llm: MagicMock,
         mock_create_pdf: MagicMock,
@@ -72,8 +74,9 @@ class TestGraphAssembly:
         mock_llm.invoke.return_value = PARSED
         mock_parse_llm.return_value = mock_llm
 
-        # Other LLM-calling nodes: let them fail gracefully
-        mock_ats_llm.side_effect = RuntimeError("not under test")
+        # Other LLM-calling nodes: let them fail or no-op gracefully
+        mock_ats_keywords.return_value = ([], [])
+        mock_ats_tone.return_value = []
         mock_gaps_llm.side_effect = RuntimeError("not under test")
         mock_optimize_llm.side_effect = RuntimeError("not under test")
 
