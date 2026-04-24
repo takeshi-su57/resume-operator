@@ -12,13 +12,15 @@ from unittest.mock import patch
 
 from rich.console import Console
 
+from resume_operator.prompters import RichPrompter
 from resume_operator.state import Proposal, ResumeOptimizerState
 from resume_operator.tools.approval_flow import run_approval_flow
 
 
-def _silent_console() -> Console:
-    # record=True + no file makes the console silent enough for test output.
-    return Console(file=None, quiet=True)
+def _silent_prompter() -> RichPrompter:
+    # quiet=True suppresses Rich output for test clarity; the RichPrompter
+    # still goes through `Prompt.ask` / `Confirm.ask`, which the tests patch.
+    return RichPrompter(Console(file=None, quiet=True))
 
 
 def _proposal(
@@ -55,7 +57,7 @@ class TestRunApprovalFlow:
     def test_empty_proposals_returns_empty_outcome(self) -> None:
         state = ResumeOptimizerState()
         outcome = run_approval_flow(
-            state, [], revise_fn=lambda *a, **kw: None, console=_silent_console()
+            state, [], revise_fn=lambda *a, **kw: None, prompter=_silent_prompter()
         )
         assert outcome.approved == []
         assert outcome.rejected == []
@@ -66,7 +68,7 @@ class TestRunApprovalFlow:
         p = _proposal()
         with patch("rich.prompt.Prompt.ask", side_effect=_scripted(["y"])):
             outcome = run_approval_flow(
-                state, [p], revise_fn=lambda *a, **kw: None, console=_silent_console()
+                state, [p], revise_fn=lambda *a, **kw: None, prompter=_silent_prompter()
             )
         assert outcome.approved == [p]
         assert outcome.rejected == []
@@ -77,7 +79,7 @@ class TestRunApprovalFlow:
         # Scripted: choice="n", then reason="I never used K8s".
         with patch("rich.prompt.Prompt.ask", side_effect=_scripted(["n", "I never used K8s"])):
             outcome = run_approval_flow(
-                state, [p], revise_fn=lambda *a, **kw: None, console=_silent_console()
+                state, [p], revise_fn=lambda *a, **kw: None, prompter=_silent_prompter()
             )
         assert outcome.approved == []
         assert len(outcome.rejected) == 1
@@ -90,7 +92,7 @@ class TestRunApprovalFlow:
         p = _proposal()
         with patch("rich.prompt.Prompt.ask", side_effect=_scripted(["n", ""])):
             outcome = run_approval_flow(
-                state, [p], revise_fn=lambda *a, **kw: None, console=_silent_console()
+                state, [p], revise_fn=lambda *a, **kw: None, prompter=_silent_prompter()
             )
         assert len(outcome.rejected) == 1
         assert outcome.rejected[0].user_reason == ""
@@ -122,7 +124,7 @@ class TestRunApprovalFlow:
                 state,
                 [v1],
                 revise_fn=scripted_revise,
-                console=_silent_console(),
+                prompter=_silent_prompter(),
             )
 
         assert outcome.approved == [v2]
@@ -147,7 +149,7 @@ class TestRunApprovalFlow:
             side_effect=_scripted(["f", "first feedback", "f", "second feedback", "y"]),
         ):
             outcome = run_approval_flow(
-                state, [v1], revise_fn=scripted_revise, console=_silent_console()
+                state, [v1], revise_fn=scripted_revise, prompter=_silent_prompter()
             )
         assert outcome.approved == [v3]
 
@@ -163,7 +165,7 @@ class TestRunApprovalFlow:
         # f → empty feedback → y (accept original, no revision happened)
         with patch("rich.prompt.Prompt.ask", side_effect=_scripted(["f", "", "y"])):
             outcome = run_approval_flow(
-                state, [p], revise_fn=should_not_be_called, console=_silent_console()
+                state, [p], revise_fn=should_not_be_called, prompter=_silent_prompter()
             )
         assert outcome.approved == [p]
 
@@ -176,7 +178,7 @@ class TestRunApprovalFlow:
         # f → feedback → None from revise_fn → y on original
         with patch("rich.prompt.Prompt.ask", side_effect=_scripted(["f", "feedback", "y"])):
             outcome = run_approval_flow(
-                state, [p], revise_fn=lambda *a, **kw: None, console=_silent_console()
+                state, [p], revise_fn=lambda *a, **kw: None, prompter=_silent_prompter()
             )
         assert outcome.approved == [p]
 
@@ -189,7 +191,7 @@ class TestRunApprovalFlow:
                 state,
                 [p1, p2],
                 revise_fn=lambda *a, **kw: None,
-                console=_silent_console(),
+                prompter=_silent_prompter(),
             )
         assert outcome.quit_early is True
         assert outcome.approved == []

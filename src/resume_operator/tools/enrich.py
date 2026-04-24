@@ -2,16 +2,19 @@
 
 Flow:
   1. `generate_questions(master, facts, jd)` → up to N `Question` objects.
-  2. For each question, the CLI prompts the user for a free-text answer.
+  2. For each question, the session prompts the user for a free-text answer.
   3. `polish_answer(question, answer, master, jd)` → a `PolishedFact` that
      rewrites the answer as an ATS-ready bullet and classifies which
      facts_bank bucket it belongs in.
-  4. The CLI shows the polished bullet and asks accept / edit / reject.
+  4. The session shows the polished bullet and asks accept / edit / reject.
   5. `assemble_additions(accepted)` → four lists ready to hand to
      `tools.facts_bank.append_to_facts`.
 
-This module is LLM-facing logic only — the interactive prompting lives in
-`main.py` so tests can exercise the pure functions without stdin mocking.
+The LLM-facing helpers (`generate_questions`, `polish_answer`,
+`assemble_additions`, `collect_existing_ids`) are pure and testable without
+stdin mocking. `run_interactive_session` drives the user-facing loop
+through a `Prompter` seam so the same logic serves both the CLI and the
+desktop GUI.
 """
 
 from __future__ import annotations
@@ -29,7 +32,7 @@ from resume_operator.state import FactItem, FactsBank, ResumeMaster
 from resume_operator.tools.llm_provider import get_structured_llm
 
 if TYPE_CHECKING:
-    from rich.console import Console
+    from resume_operator.prompter import Prompter
 
 logger = logging.getLogger(__name__)
 
@@ -220,9 +223,9 @@ def collect_existing_ids(bank: FactsBank) -> set[str]:
 
 # --- Interactive session --------------------------------------------------
 #
-# Kept here (rather than in main.py) so `run`'s auto-enrich path and any future
-# non-CLI caller can reuse the same loop. The prompting primitives still come
-# from Rich; the function reads from stdin via Rich's `Prompt.ask`.
+# Kept here alongside the pure LLM helpers so `run`'s auto-enrich path and any
+# future non-CLI caller (server, tests) can reuse the same loop. User
+# interaction goes through the injected `Prompter` seam.
 
 
 def run_interactive_session(
@@ -231,84 +234,57 @@ def run_interactive_session(
     jd_text: str,
     *,
     max_questions: int = 5,
-    console: Console | None = None,
+    prompter: Prompter,
 ) -> SessionPlan:
     """Interactive enrichment session: ask → answer → polish → accept/edit/reject.
 
     Returns a `SessionPlan` with accepted items. Caller is responsible for
     persisting the plan via `assemble_additions` + `facts_bank.append_to_facts`.
-
-    The console is optional so tests can inject a silent/buffer console; when
-    `None`, a default Rich `Console` is used.
     """
-    from rich.console import Console
-    from rich.panel import Panel
-    from rich.prompt import Prompt
-    from rich.status import Status
-
-    active_console = console if console is not None else Console()
-
-    with Status("[bold cyan]Generating interview questions...", console=active_console):
+    with prompter.status("[bold cyan]Generating interview questions..."):
         questions = generate_questions(master, facts, jd_text, n_max=max_questions)
 
     if not questions:
-        active_console.print(
-            Panel(
-                "The LLM didn't surface any gap-worthy questions. Either your "
-                "master already covers this JD, or the question-generation call "
-                "failed (run with --verbose to see).",
-                title="No questions",
-                border_style="yellow",
-            )
+        prompter.panel(
+            "The LLM didn't surface any gap-worthy questions. Either your "
+            "master already covers this JD, or the question-generation call "
+            "failed (run with --verbose to see).",
+            title="No questions",
+            style="yellow",
         )
         return SessionPlan()
 
-    active_console.print(
-        Panel(
-            f"[bold]{len(questions)} question(s) to discuss.[/bold]\n\n"
-            "[dim]For each question: answer with facts and metrics — e.g. "
-            '"I built 50+ endpoints serving 2M requests/day" — not with instructions. '
-            "Type 'skip' to skip, 'quit' to end early.[/dim]",
-            title="Enrichment session",
-            border_style="cyan",
-        )
+    prompter.panel(
+        f"[bold]{len(questions)} question(s) to discuss.[/bold]\n\n"
+        "[dim]For each question: answer with facts and metrics — e.g. "
+        '"I built 50+ endpoints serving 2M requests/day" — not with instructions. '
+        "Type 'skip' to skip, 'quit' to end early.[/dim]",
+        title="Enrichment session",
+        style="cyan",
     )
 
     plan = SessionPlan()
+    total = len(questions)
     for i, question in enumerate(questions, 1):
-        active_console.print(
-            f"\n[bold cyan]Question {i}/{len(questions)}:[/bold cyan] {question.question}"
-        )
-        active_console.print(f"[dim]why: {question.why}[/dim]")
-        active_console.print(
-            '[dim]Answer with facts and metrics (e.g. "I built 50+ endpoints serving '
-            "2M requests/day\"). Do NOT type instructions like 'make it professional' "
-            "— that's the LLM's job in the polish step.[/dim]"
-        )
-        answer = Prompt.ask("[bold]>[/bold]", default="", console=active_console)
-        answer_stripped = answer.strip()
-        if answer_stripped.lower() == "quit":
+        prompter.render_question(question, index=i, total=total)
+        answer = prompter.text("[bold]>[/bold]", default="")
+        if answer.lower() == "quit":
             break
-        if not answer_stripped or answer_stripped.lower() == "skip":
+        if not answer or answer.lower() == "skip":
             continue
 
-        with Status("[bold cyan]Polishing...", console=active_console):
+        with prompter.status("[bold cyan]Polishing..."):
             polished = polish_answer(question, answer, master, jd_text)
         if polished is None:
-            active_console.print("[red]Polish step failed — skipping this question.[/red]")
+            prompter.notice("Polish step failed — skipping this question.", style="red")
             continue
 
-        target = f" → [magenta]{polished.bucket}[/magenta]" + (
-            f" (role_id={polished.role_id})" if polished.role_id else ""
-        )
-        active_console.print(f"\n[bold green]Polished:[/bold green]{target}")
-        active_console.print(f"  {polished.polished_text}")
+        prompter.render_polished(polished)
 
-        choice = Prompt.ask(
+        choice = prompter.choose(
             "[a]ccept / [e]dit / [r]eject / [s]kip / [q]uit",
             choices=["a", "e", "r", "s", "q"],
             default="a",
-            console=active_console,
         )
         if choice == "q":
             break
@@ -316,10 +292,8 @@ def run_interactive_session(
             continue
         final_text = polished.polished_text
         if choice == "e":
-            edited = Prompt.ask(
-                "[bold]Your wording[/bold]", default=final_text, console=active_console
-            )
-            final_text = edited.strip() or final_text
+            edited = prompter.text("[bold]Your wording[/bold]", default=final_text)
+            final_text = edited or final_text
         plan.items.append(
             AcceptedItem(
                 text=final_text,

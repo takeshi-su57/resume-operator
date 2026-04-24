@@ -1,6 +1,6 @@
 """Integration tests for the #78 iterative tailor approval loop.
 
-These tests hit `_run_approval_loop` directly with mocked tailor graph +
+These tests hit `run_approval_loop` directly with mocked tailor graph +
 LLM calls, so we can assert on the loop's control flow (accept / quit /
 cap / empty-proposals / approved-then-reloop) without running the whole
 LangGraph pipeline.
@@ -12,8 +12,10 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from rich.console import Console
 
-from resume_operator.main import _run_approval_loop
+from resume_operator.flows.approval import run_approval_loop
+from resume_operator.prompters import RichPrompter
 from resume_operator.state import (
     ATSScore,
     FactItem,
@@ -26,10 +28,14 @@ from resume_operator.state import (
 from resume_operator.tools.facts_bank import save_facts
 
 
+def _silent_prompter() -> RichPrompter:
+    return RichPrompter(Console(file=None, quiet=True))
+
+
 def _tailor_result(
     score: float, iteration_id: str = "", tailored_items: int = 2
 ) -> dict[str, object]:
-    """Build a minimal dict that _run_approval_loop can treat as a tailor-graph result."""
+    """Build a minimal dict that run_approval_loop can treat as a tailor-graph result."""
     return {
         "ats_score": ATSScore(score=score, reasoning=f"iter {iteration_id}"),
         "tailored_resume": TailoredResume(
@@ -69,7 +75,8 @@ class TestApprovalLoop:
         initial_result = _tailor_result(score=0.75, iteration_id="1")
         initial_input = {"facts_path": str(facts_path)}
 
-        final = _run_approval_loop(
+        final = run_approval_loop(
+            prompter=_silent_prompter(),
             tailor_graph=tailor_graph,
             initial_result=initial_result,
             initial_input=initial_input,
@@ -120,7 +127,8 @@ class TestApprovalLoop:
         tailor_graph.invoke.return_value = _tailor_result(score=0.85, iteration_id="2")
 
         initial_result = _tailor_result(score=0.70, iteration_id="1")
-        final = _run_approval_loop(
+        final = run_approval_loop(
+            prompter=_silent_prompter(),
             tailor_graph=tailor_graph,
             initial_result=initial_result,
             initial_input={"facts_path": str(facts_path)},
@@ -151,7 +159,8 @@ class TestApprovalLoop:
         tailor_graph = MagicMock()  # shouldn't be re-invoked
         initial_result = _tailor_result(score=0.60, iteration_id="1")
 
-        final = _run_approval_loop(
+        final = run_approval_loop(
+            prompter=_silent_prompter(),
             tailor_graph=tailor_graph,
             initial_result=initial_result,
             initial_input={"facts_path": str(facts_path)},
@@ -189,7 +198,8 @@ class TestApprovalLoop:
 
         tailor_graph = MagicMock()
         initial_result = _tailor_result(score=0.55)
-        final = _run_approval_loop(
+        final = run_approval_loop(
+            prompter=_silent_prompter(),
             tailor_graph=tailor_graph,
             initial_result=initial_result,
             initial_input={"facts_path": str(facts_path)},
@@ -220,7 +230,8 @@ class TestApprovalLoop:
 
         tailor_graph = MagicMock()
         initial_result = _tailor_result(score=0.65, iteration_id="1")
-        final = _run_approval_loop(
+        final = run_approval_loop(
+            prompter=_silent_prompter(),
             tailor_graph=tailor_graph,
             initial_result=initial_result,
             initial_input={"facts_path": str(facts_path)},
@@ -279,7 +290,8 @@ class TestApprovalLoop:
 
         initial_result = _tailor_result(score=0.80, iteration_id="1")
 
-        final = _run_approval_loop(
+        final = run_approval_loop(
+            prompter=_silent_prompter(),
             tailor_graph=tailor_graph,
             initial_result=initial_result,
             initial_input={"facts_path": str(facts_path)},

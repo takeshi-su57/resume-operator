@@ -9,19 +9,20 @@ from rich.panel import Panel
 from rich.status import Status
 
 from resume_operator.config import get_settings
+from resume_operator.flows.approval import run_approval_loop
+from resume_operator.flows.enrich import DEFAULT_FACTS_PATH, run_auto_enrich
 from resume_operator.graph import (
     build_finalize_graph,
     build_graph,
     build_score_graph,
     build_tailor_graph,
 )
+from resume_operator.prompters import RichPrompter
 from resume_operator.state import (
     ATSScore,
     GapAnalysis,
     OptimizedResume,
-    RejectedSuggestion,
     ResumeData,
-    ResumeOptimizerState,
 )
 
 app = typer.Typer(
@@ -67,9 +68,6 @@ def _validate_facts(facts: Path) -> None:
         raise typer.BadParameter(f"'{facts}' does not exist or is not a file.")
     if facts.suffix.lower() not in {".yaml", ".yml"}:
         raise typer.BadParameter(f"'{facts}' is not a YAML file (expected .yaml or .yml).")
-
-
-DEFAULT_FACTS_PATH = Path("data/facts_bank.yaml")
 
 
 def _validate_job(job: Path) -> None:
@@ -144,177 +142,6 @@ def _should_run_approval_loop(
 
     tailored = result.get("tailored_resume")
     return isinstance(tailored, TailoredResume) and bool(tailored.items)
-
-
-def _run_approval_loop(
-    *,
-    tailor_graph: object,
-    initial_result: dict[str, object],
-    initial_input: dict[str, object],
-    max_iterations: int,
-) -> dict[str, object]:
-    """Drive the iterative tailor → score → gate → propose → approve → apply → re-tailor loop.
-
-    Returns the final tailor-graph result used by the finalize step. The loop
-    exits when (a) the user accepts the current ATS score, (b) the LLM
-    produces no proposals, (c) the user quits mid-approval, or (d) the user
-    declines to continue past the iteration cap — in which case the
-    best-scoring iteration seen so far is returned.
-    """
-    from rich.prompt import Confirm
-
-    from resume_operator.nodes.apply_approvals import apply_approvals
-    from resume_operator.nodes.propose_changes import propose_changes, revise_proposal
-    from resume_operator.tools.approval_flow import run_approval_flow
-
-    current = initial_result
-    best = current
-    best_score = _result_score(current)
-    iteration = 1
-    max_iter_current = max_iterations
-    accumulated_rejections: list[RejectedSuggestion] = []
-
-    while True:
-        score = _result_score(current)
-        if score > best_score:
-            best, best_score = current, score
-
-        color = _score_color(score)
-        console.print(
-            f"\n[bold]Iteration {iteration}/{max_iter_current}:[/bold] "
-            f"ATS score on tailored output = [{color}]{score:.0%}[/{color}]"
-        )
-        if Confirm.ask(
-            "[bold]Accept this tailored version and generate the PDF?[/bold]",
-            default=False,
-            console=console,
-        ):
-            return current
-
-        if iteration >= max_iter_current:
-            console.print(
-                f"[yellow]Reached {max_iter_current} iterations (best ATS={best_score:.0%}). "
-                "Continue iterating?[/yellow]"
-            )
-            if not Confirm.ask("Continue anyway?", default=False, console=console):
-                console.print("[cyan]Using the best-scoring tailored version so far.[/cyan]")
-                return best
-            # Reset counter — user opted in for more. Add another cap on top.
-            max_iter_current = iteration + max_iterations
-
-        # Build a state object for propose + approval + apply (these nodes are
-        # called directly, not through the graph).
-        state = ResumeOptimizerState.model_validate(current)
-        state.rejected_suggestions = list(accumulated_rejections)
-
-        with Status("[bold cyan]LLM proposing tailored edits...", console=console):
-            proposal_out = propose_changes(state)
-        proposals = proposal_out.get("proposals", [])
-        if not proposals:
-            console.print(
-                "[yellow]LLM had no proposals this iteration — "
-                "sticking with the best version so far.[/yellow]"
-            )
-            return best
-
-        outcome = run_approval_flow(
-            state,
-            list(proposals),
-            revise_fn=revise_proposal,
-            console=console,
-        )
-        accumulated_rejections.extend(outcome.rejected)
-        if outcome.quit_early:
-            console.print(
-                "[cyan]You quit the approval step — using the best tailored version so far.[/cyan]"
-            )
-            return best
-        if not outcome.approved:
-            # User rejected everything. No new facts — next tailor pass would
-            # produce the same output. Exit with the best seen.
-            console.print(
-                "[cyan]Nothing approved this iteration — using the best version so far.[/cyan]"
-            )
-            return best
-
-        state.approved_proposals = list(outcome.approved)
-        apply_approvals(state)  # writes to facts_bank.yaml on disk
-
-        with Status("[bold cyan]Re-tailoring with the approved facts...", console=console):
-            current = tailor_graph.invoke(initial_input)  # type: ignore[attr-defined]
-        iteration += 1
-
-
-def _result_score(result: dict[str, object]) -> float:
-    ats = result.get("ats_score")
-    if isinstance(ats, ATSScore):
-        return ats.score
-    if isinstance(ats, dict):
-        value = ats.get("score", 0.0)
-        return float(value) if isinstance(value, (int, float)) else 0.0
-    return 0.0
-
-
-def _run_auto_enrich(*, master_path: Path, facts_path: Path | None, jd_text: str) -> bool:
-    """Pause the pipeline, prompt for an enrichment session, persist accepted items.
-
-    Returns True if any items were appended to the facts bank (so the caller
-    knows to re-invoke the graph), False otherwise.
-    """
-    from rich.prompt import Prompt
-
-    from resume_operator.state import FactsBank
-    from resume_operator.tools.enrich import (
-        assemble_additions,
-        collect_existing_ids,
-        run_interactive_session,
-    )
-    from resume_operator.tools.facts_bank import append_to_facts, load_facts
-    from resume_operator.tools.master_resume import load_master
-
-    console.print(
-        Panel(
-            "Only a few items landed in the tailored resume — your master + "
-            "facts may be thin for this JD. We can grow your facts bank with "
-            "a short interview now (LLM asks grounded questions, you answer "
-            "in your own words, LLM polishes the phrasing).",
-            title="Enrichment available",
-            border_style="yellow",
-        )
-    )
-    if Prompt.ask("Start an enrichment session?", choices=["y", "n"], default="y") != "y":
-        return False
-
-    target_facts = facts_path or DEFAULT_FACTS_PATH
-    master_obj = load_master(master_path)
-    facts_obj = load_facts(target_facts) if target_facts.exists() else FactsBank()
-
-    plan = run_interactive_session(master_obj, facts_obj, jd_text, console=console)
-    if not plan.items:
-        console.print("[yellow]No items accepted — facts_bank unchanged.[/yellow]")
-        return False
-
-    existing_ids = collect_existing_ids(facts_obj)
-    projects, extra_bullets, skills, certifications = assemble_additions(
-        plan, existing_ids=existing_ids
-    )
-    append_to_facts(
-        target_facts,
-        projects=projects,
-        extra_bullets=extra_bullets,
-        skills=skills,
-        certifications=certifications,
-    )
-    console.print(
-        Panel(
-            f"[bold]Wrote:[/bold] {target_facts}\n"
-            f"Projects: +{len(projects)}  |  Extra bullets: +{len(extra_bullets)}  |  "
-            f"Skills: +{len(skills)}  |  Certs: +{len(certifications)}",
-            title="Facts bank updated",
-            border_style="green",
-        )
-    )
-    return True
 
 
 @app.command()
@@ -445,12 +272,14 @@ def run(
 
     tailor_graph = build_tailor_graph()
     finalize_graph = build_finalize_graph()
+    prompter = RichPrompter(console)
     with Status("[bold cyan]Running optimization pipeline...", console=console):
         result = tailor_graph.invoke(initial)
 
     # --- Auto-enrich: if the first tailor pass is thin, offer an interview ---
     if _should_offer_enrich(result, no_enrich=no_enrich, master_path=master):
-        if _run_auto_enrich(
+        if run_auto_enrich(
+            prompter=prompter,
             master_path=master,
             facts_path=resolved_facts,
             jd_text=jd_text,
@@ -473,7 +302,8 @@ def run(
         effective_max_iter = (
             max_iter if max_iter is not None else get_settings().resume_max_iterations
         )
-        result = _run_approval_loop(
+        result = run_approval_loop(
+            prompter=prompter,
             tailor_graph=tailor_graph,
             initial_result=result,
             initial_input=initial,
