@@ -542,14 +542,22 @@ class TestScoreCommand:
         fake_job = tmp_path / "job.txt"
         fake_job.write_text("Backend Engineer")
 
+        from resume_operator.state import SkillCountRow
+
         mock_graph = MagicMock()
         mock_graph.invoke.return_value = {
             "resume": ResumeData(name="Jane"),
             "ats_score": ATSScore(
                 score=0.72,
                 reasoning="Good Python match",
+                # #81: keyword_matches/gaps are derived back-compat fields; the
+                # rendered table pulls from hard_skills/soft_skills directly.
                 keyword_matches=["Python"],
                 keyword_gaps=["K8s"],
+                hard_skills=[
+                    SkillCountRow(name="Python", resume_count=3, jd_count=2),
+                    SkillCountRow(name="K8s", resume_count=0, jd_count=3),
+                ],
             ),
         }
         mock_build.return_value = mock_graph
@@ -559,6 +567,7 @@ class TestScoreCommand:
         assert result.exit_code == 0
         assert "72%" in result.output
         assert "Good Python match" in result.output
+        # Hard-skill table renders skills with resume/JD counts.
         assert "Python" in result.output
         assert "K8s" in result.output
 

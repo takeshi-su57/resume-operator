@@ -497,16 +497,10 @@ def run(
         console.print(f"  Email: {resume_data.email}")
         console.print(f"  Skills: {', '.join(resume_data.skills)}")
 
-    # Display ATS score with color coding
+    # Display ATS report — composite + per-dimension breakdown (#81).
     ats: ATSScore = result.get("ats_score", ATSScore())
     if ats.score > 0:
-        color = _score_color(ats.score)
-        console.print(f"\n[bold green]ATS Score:[/bold green] [{color}]{ats.score:.0%}[/{color}]")
-        console.print(f"  Reasoning: {ats.reasoning}")
-        if ats.keyword_matches:
-            console.print(f"  [green]Matches:[/green] {', '.join(ats.keyword_matches)}")
-        if ats.keyword_gaps:
-            console.print(f"  [yellow]Gaps:[/yellow] {', '.join(ats.keyword_gaps)}")
+        _display_ats_report(ats)
 
     # Display gap analysis
     gaps: GapAnalysis = result.get("gap_analysis", GapAnalysis())
@@ -742,15 +736,116 @@ def score(
 
     ats: ATSScore = result.get("ats_score", ATSScore())
     if ats.score > 0:
-        color = _score_color(ats.score)
-        console.print(f"\n[bold green]ATS Score:[/bold green] [{color}]{ats.score:.0%}[/{color}]")
-        console.print(f"  Reasoning: {ats.reasoning}")
-        if ats.keyword_matches:
-            console.print(f"  [green]Matches:[/green] {', '.join(ats.keyword_matches)}")
-        if ats.keyword_gaps:
-            console.print(f"  [yellow]Gaps:[/yellow] {', '.join(ats.keyword_gaps)}")
+        _display_ats_report(ats)
     elif not errors:
         console.print("[yellow]No ATS score produced.[/yellow]")
+
+
+def _display_ats_report(ats: ATSScore) -> None:
+    """Render the #81 multi-dimensional ATS report as a Rich table alongside
+    the composite score. Falls back to the pre-#81 shape gracefully for the
+    back-compat alias — all new fields default to empty / False, so the table
+    just shows zero rows in those sections.
+    """
+    from rich.table import Table
+
+    color = _score_color(ats.score)
+    console.print(f"\n[bold green]ATS Composite:[/bold green] [{color}]{ats.score:.0%}[/{color}]")
+    console.print(f"  [dim]{ats.reasoning}[/dim]")
+
+    # Structural dimensions
+    structural_table = Table(title="Structural Checks", title_style="bold", show_header=True)
+    structural_table.add_column("Dimension")
+    structural_table.add_column("Status", justify="center")
+    structural_table.add_column("Detail", style="dim")
+    structural_table.add_row(
+        "Contact info",
+        _status_glyph(
+            ats.contact.email_present and ats.contact.phone_present and ats.contact.address_present
+        ),
+        _contact_detail(ats.contact),
+    )
+    structural_table.add_row(
+        "Sections",
+        _status_glyph(
+            ats.sections.summary
+            and ats.sections.experience
+            and ats.sections.education
+            and ats.sections.skills
+        ),
+        _sections_detail(ats.sections),
+    )
+    structural_table.add_row(
+        "Job title match",
+        "✓" if ats.job_title.exact_match else ("~" if ats.job_title.partial_match else "✗"),
+        _title_detail(ats.job_title),
+    )
+    structural_table.add_row(
+        "Measurable results",
+        _status_glyph(ats.measurable_results_count >= 5),
+        f"{ats.measurable_results_count} quantified lines",
+    )
+    structural_table.add_row(
+        "Word count",
+        _status_glyph(ats.word_count_ok),
+        f"{ats.word_count} words (target 400-1000)",
+    )
+    console.print(structural_table)
+
+    # Hard skill table
+    if ats.hard_skills:
+        hard_table = Table(title="Hard Skills", title_style="bold", show_header=True)
+        hard_table.add_column("Skill")
+        hard_table.add_column("Resume", justify="right")
+        hard_table.add_column("JD", justify="right")
+        for row in ats.hard_skills:
+            hard_table.add_row(row.name, str(row.resume_count), str(row.jd_count))
+        console.print(hard_table)
+
+    if ats.soft_skills:
+        soft_table = Table(title="Soft Skills", title_style="bold", show_header=True)
+        soft_table.add_column("Skill")
+        soft_table.add_column("Resume", justify="right")
+        soft_table.add_column("JD", justify="right")
+        for row in ats.soft_skills:
+            soft_table.add_row(row.name, str(row.resume_count), str(row.jd_count))
+        console.print(soft_table)
+
+    if ats.tone_flags:
+        console.print("\n[bold yellow]Tone flags:[/bold yellow]")
+        for flag in ats.tone_flags:
+            console.print(f'  [yellow]•[/yellow] "{flag.phrase}" — {flag.suggestion}')
+
+
+def _status_glyph(ok: bool) -> str:
+    return "[green]✓[/green]" if ok else "[yellow]⚠[/yellow]"
+
+
+def _contact_detail(contact: object) -> str:
+    fields = [
+        ("email", "email_present"),
+        ("phone", "phone_present"),
+        ("address", "address_present"),
+    ]
+    missing = [name for name, attr in fields if not getattr(contact, attr, False)]
+    return "all present" if not missing else f"missing: {', '.join(missing)}"
+
+
+def _sections_detail(sections: object) -> str:
+    missing: list[str] = []
+    for name in ("summary", "experience", "education", "skills"):
+        if not getattr(sections, name, False):
+            missing.append(name)
+    return "all present" if not missing else f"missing: {', '.join(missing)}"
+
+
+def _title_detail(job_title: object) -> str:
+    jd = getattr(job_title, "jd_title", "") or ""
+    if getattr(job_title, "exact_match", False):
+        return f"'{jd}' exact match"
+    if getattr(job_title, "partial_match", False):
+        return f"'{jd}' partial match"
+    return f"'{jd}' not found on resume" if jd else "no JD title detected"
 
 
 if __name__ == "__main__":

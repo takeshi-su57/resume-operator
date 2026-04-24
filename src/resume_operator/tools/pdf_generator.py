@@ -419,7 +419,10 @@ def _role_row(role: object, styles: dict[str, ParagraphStyle], frame_width: floa
     # 65 / 35 split — date strings are short, role/company is the prime real estate.
     left_w = frame_width * 0.65
     right_w = frame_width - left_w
-    table = Table([[left, right]], colWidths=[left_w, right_w])
+    # hAlign='LEFT' is required: Table's default 'CENTER' subtracts ~6pt on the
+    # left even when total colWidths == frame_width, outdenting the role title
+    # relative to the surrounding section/bullet paragraphs.
+    table = Table([[left, right]], colWidths=[left_w, right_w], hAlign="LEFT")
     table.setStyle(
         TableStyle(
             [

@@ -16,7 +16,31 @@ from langgraph.graph.state import CompiledStateGraph
 
 from resume_operator.graph import _route_after_ats_score, build_graph
 from resume_operator.nodes.parse_resume import ResumeLLMOutput
-from resume_operator.state import ATSScore, ResumeOptimizerState
+from resume_operator.state import (
+    ATSReport,
+    ContactCheck,
+    ResumeOptimizerState,
+    SectionCheck,
+    SkillCountRow,
+)
+
+
+def _healthy_report(score: float) -> ATSReport:
+    """Skip-eligible report: high composite + LLM data + good structural signal.
+    Used by the routing tests that want to exercise the skip path."""
+    return ATSReport(
+        score=score,
+        contact=ContactCheck(email_present=True, phone_present=True, address_present=True),
+        sections=SectionCheck(summary=True, experience=True, education=True, skills=True),
+        word_count=700,
+        word_count_ok=True,
+        hard_skills=[
+            SkillCountRow(name="Python", resume_count=2, jd_count=1),
+            SkillCountRow(name="AWS", resume_count=2, jd_count=1),
+            SkillCountRow(name="Docker", resume_count=1, jd_count=1),
+        ],
+    )
+
 
 EXPECTED_NODES = [
     "load_master",
@@ -52,14 +76,16 @@ class TestGraphAssembly:
     @patch("resume_operator.nodes.generate_pdf.create_pdf")
     @patch("resume_operator.nodes.optimize_content.get_structured_llm")
     @patch("resume_operator.nodes.analyze_gaps.get_structured_llm")
-    @patch("resume_operator.nodes.ats_score.get_structured_llm")
+    @patch("resume_operator.nodes.ats_score.check_tone")
+    @patch("resume_operator.nodes.ats_score.extract_keywords")
     @patch("resume_operator.nodes.parse_resume.get_structured_llm")
     @patch("resume_operator.nodes.parse_resume.extract_text")
     def test_graph_runs_parse_resume(
         self,
         mock_extract: MagicMock,
         mock_parse_llm: MagicMock,
-        mock_ats_llm: MagicMock,
+        mock_ats_keywords: MagicMock,
+        mock_ats_tone: MagicMock,
         mock_gaps_llm: MagicMock,
         mock_optimize_llm: MagicMock,
         mock_create_pdf: MagicMock,
@@ -72,8 +98,9 @@ class TestGraphAssembly:
         mock_llm.invoke.return_value = PARSED
         mock_parse_llm.return_value = mock_llm
 
-        # Other LLM-calling nodes: let them fail gracefully
-        mock_ats_llm.side_effect = RuntimeError("not under test")
+        # Other LLM-calling nodes: let them fail or no-op gracefully
+        mock_ats_keywords.return_value = ([], [])
+        mock_ats_tone.return_value = []
         mock_gaps_llm.side_effect = RuntimeError("not under test")
         mock_optimize_llm.side_effect = RuntimeError("not under test")
 
@@ -104,27 +131,58 @@ class TestGraphAssembly:
 
 class TestConditionalRouting:
     @patch("resume_operator.graph.get_settings")
-    def test_high_score_routes_to_skip(self, mock_settings: MagicMock) -> None:
-        """ATS score at or above threshold routes to 'skip'."""
+    def test_high_score_with_healthy_subdimensions_skips(self, mock_settings: MagicMock) -> None:
+        """Composite ≥ threshold AND hard coverage + structural healthy → skip."""
         mock_settings.return_value.ats_skip_threshold = 0.9
-        state = ResumeOptimizerState(ats_score=ATSScore(score=0.95))
-
+        state = ResumeOptimizerState(ats_score=_healthy_report(0.95))
         assert _route_after_ats_score(state) == "skip"
 
     @patch("resume_operator.graph.get_settings")
-    def test_threshold_score_routes_to_skip(self, mock_settings: MagicMock) -> None:
-        """ATS score exactly at threshold routes to 'skip'."""
+    def test_threshold_score_with_healthy_subdimensions_skips(
+        self, mock_settings: MagicMock
+    ) -> None:
+        """Composite exactly at threshold still skips if sub-dimensions healthy."""
         mock_settings.return_value.ats_skip_threshold = 0.9
-        state = ResumeOptimizerState(ats_score=ATSScore(score=0.9))
-
+        state = ResumeOptimizerState(ats_score=_healthy_report(0.9))
         assert _route_after_ats_score(state) == "skip"
 
     @patch("resume_operator.graph.get_settings")
     def test_low_score_routes_to_optimize(self, mock_settings: MagicMock) -> None:
-        """ATS score below threshold routes to 'optimize'."""
         mock_settings.return_value.ats_skip_threshold = 0.9
-        state = ResumeOptimizerState(ats_score=ATSScore(score=0.72))
+        state = ResumeOptimizerState(ats_score=ATSReport(score=0.72))
+        assert _route_after_ats_score(state) == "optimize"
 
+    @patch("resume_operator.graph.get_settings")
+    def test_high_score_but_no_llm_data_still_optimizes(self, mock_settings: MagicMock) -> None:
+        """#81 regression guard: pre-#81, a garbage LLM returning score=1.0
+        with empty keyword data falsely skipped optimization. The hardened
+        gate requires LLM keyword data to trust the composite."""
+        mock_settings.return_value.ats_skip_threshold = 0.9
+        state = ResumeOptimizerState(
+            ats_score=ATSReport(score=0.98, hard_skills=[], soft_skills=[])
+        )
+        assert _route_after_ats_score(state) == "optimize"
+
+    @patch("resume_operator.graph.get_settings")
+    def test_high_score_but_low_hard_coverage_still_optimizes(
+        self, mock_settings: MagicMock
+    ) -> None:
+        """Even with LLM data, if hard-skill coverage is weak the composite
+        is misleading — keep optimizing."""
+        mock_settings.return_value.ats_skip_threshold = 0.9
+        state = ResumeOptimizerState(
+            ats_score=ATSReport(
+                score=0.95,
+                hard_skills=[
+                    SkillCountRow(name="Python", resume_count=0, jd_count=1),
+                    SkillCountRow(name="K8s", resume_count=0, jd_count=1),
+                    SkillCountRow(name="AWS", resume_count=1, jd_count=1),
+                ],  # 1/3 coverage = 0.33, below the 0.7 minimum
+                contact=ContactCheck(email_present=True, phone_present=True),
+                sections=SectionCheck(summary=True, experience=True, education=True, skills=True),
+                word_count_ok=True,
+            )
+        )
         assert _route_after_ats_score(state) == "optimize"
 
     @patch("resume_operator.graph.get_settings")

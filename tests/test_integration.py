@@ -10,13 +10,13 @@ from unittest.mock import MagicMock, patch
 
 from resume_operator.graph import build_graph
 from resume_operator.nodes.analyze_gaps import GapAnalysisLLMOutput
-from resume_operator.nodes.ats_score import ATSScoreLLMOutput
 from resume_operator.nodes.optimize_content import TailoredItemLLM, TailoredResumeLLMOutput
 from resume_operator.nodes.parse_resume import (
     ResumeEducationLLM,
     ResumeExperienceLLM,
     ResumeLLMOutput,
 )
+from resume_operator.state import SkillCountRow
 
 PARSED_RESUME = ResumeLLMOutput(
     name="Jane Smith",
@@ -37,12 +37,16 @@ PARSED_RESUME = ResumeLLMOutput(
     certifications=["AWS SA"],
 )
 
-ATS_SCORE_OUT = ATSScoreLLMOutput(
-    score=0.85,
-    reasoning="Strong Python and AWS match",
-    keyword_matches=["Python", "AWS"],
-    keyword_gaps=["Kubernetes", "CI/CD"],
-)
+# #81: the ATS orchestrator no longer uses a single LLM call — it calls
+# `extract_keywords` and `check_tone` as separate tools. Integration tests
+# mock those directly; the deterministic structural checks run for real.
+ATS_HARD_SKILLS = [
+    SkillCountRow(name="Python", resume_count=2, jd_count=2),
+    SkillCountRow(name="AWS", resume_count=2, jd_count=1),
+    SkillCountRow(name="Kubernetes", resume_count=0, jd_count=3),
+    SkillCountRow(name="CI/CD", resume_count=0, jd_count=1),
+]
+ATS_SOFT_SKILLS: list[SkillCountRow] = []
 
 GAPS_OUT = GapAnalysisLLMOutput(
     gaps=["No Kubernetes experience", "No CI/CD mentioned"],
@@ -81,14 +85,16 @@ class TestFullPipeline:
     @patch("resume_operator.nodes.generate_pdf.create_pdf")
     @patch("resume_operator.nodes.optimize_content.get_structured_llm")
     @patch("resume_operator.nodes.analyze_gaps.get_structured_llm")
-    @patch("resume_operator.nodes.ats_score.get_structured_llm")
+    @patch("resume_operator.nodes.ats_score.check_tone")
+    @patch("resume_operator.nodes.ats_score.extract_keywords")
     @patch("resume_operator.nodes.parse_resume.get_structured_llm")
     @patch("resume_operator.nodes.parse_resume.extract_text")
     def test_full_pipeline_happy_path(
         self,
         mock_extract: MagicMock,
         mock_parse_llm: MagicMock,
-        mock_ats_llm: MagicMock,
+        mock_ats_keywords: MagicMock,
+        mock_ats_tone: MagicMock,
         mock_gaps_llm: MagicMock,
         mock_optimize_llm: MagicMock,
         mock_create_pdf: MagicMock,
@@ -96,7 +102,8 @@ class TestFullPipeline:
     ) -> None:
         mock_extract.return_value = "Jane Smith\njane@example.com\nSenior Python engineer"
         mock_parse_llm.return_value = _make_llm(PARSED_RESUME)
-        mock_ats_llm.return_value = _make_llm(ATS_SCORE_OUT)
+        mock_ats_keywords.return_value = (ATS_HARD_SKILLS, ATS_SOFT_SKILLS)
+        mock_ats_tone.return_value = []
         mock_gaps_llm.return_value = _make_llm(GAPS_OUT)
         mock_optimize_llm.return_value = _make_llm(OPTIMIZED_OUT)
         mock_create_pdf.return_value = _make_mock_pdf_path("output/resume.pdf")
@@ -115,7 +122,9 @@ class TestFullPipeline:
         assert result["resume"].name == "Jane Smith"
         assert result["resume"].skills == ["Python", "AWS", "Docker"]
 
-        assert result["ats_score"].score == 0.85
+        # Composite score is in bounds; derived keyword_matches / keyword_gaps
+        # come from the mocked extractor output.
+        assert 0.0 <= result["ats_score"].score <= 1.0
         assert "Python" in result["ats_score"].keyword_matches
         assert "Kubernetes" in result["ats_score"].keyword_gaps
 
@@ -139,22 +148,30 @@ class TestFullPipeline:
     @patch("resume_operator.nodes.generate_pdf.create_pdf")
     @patch("resume_operator.nodes.optimize_content.get_structured_llm")
     @patch("resume_operator.nodes.analyze_gaps.get_structured_llm")
-    @patch("resume_operator.nodes.ats_score.get_structured_llm")
+    @patch("resume_operator.nodes.ats_score.check_tone")
+    @patch("resume_operator.nodes.ats_score.extract_keywords")
     @patch("resume_operator.nodes.parse_resume.get_structured_llm")
     @patch("resume_operator.nodes.parse_resume.extract_text")
-    def test_pipeline_continues_on_node_error(
+    def test_pipeline_continues_on_llm_pass_failure(
         self,
         mock_extract: MagicMock,
         mock_parse_llm: MagicMock,
-        mock_ats_llm: MagicMock,
+        mock_ats_keywords: MagicMock,
+        mock_ats_tone: MagicMock,
         mock_gaps_llm: MagicMock,
         mock_optimize_llm: MagicMock,
         mock_create_pdf: MagicMock,
         tmp_path: Path,
     ) -> None:
+        """#81: the ATS orchestrator no longer fails the pipeline when an LLM
+        sub-pass fails — it absorbs the failure (empty tables / flags) and the
+        composite score is derived from the structural half alone.
+        """
         mock_extract.return_value = "Jane Smith\njane@example.com"
         mock_parse_llm.return_value = _make_llm(PARSED_RESUME)
-        mock_ats_llm.return_value = _make_llm(RuntimeError("API unavailable"))
+        # Both LLM passes return empty (what the tools return on failure).
+        mock_ats_keywords.return_value = ([], [])
+        mock_ats_tone.return_value = []
         mock_gaps_llm.return_value = _make_llm(GAPS_OUT)
         mock_optimize_llm.return_value = _make_llm(OPTIMIZED_OUT)
         mock_create_pdf.return_value = _make_mock_pdf_path()
@@ -172,8 +189,10 @@ class TestFullPipeline:
 
         assert "resume" in result
         assert result["resume"].name == "Jane Smith"
-        assert len(result["errors"]) > 0
-        assert any("ats_score" in e for e in result["errors"])
+        # Pipeline kept running; ats_score produced a valid (degraded) report.
+        assert "ats_score" in result
+        assert 0.0 <= result["ats_score"].score <= 1.0
+        assert result["ats_score"].hard_skills == []
         assert len(result["gap_analysis"].gaps) > 0
         assert result["tailored_resume"].items
         assert isinstance(result["report"], dict)
