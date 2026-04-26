@@ -1,0 +1,27 @@
+[package]
+name = "resume-operator-desktop"
+version = "0.1.0"
+description = "Tauri desktop shell for resume-operator"
+authors = ["Bruno"]
+license = "MIT"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "resume_operator_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-shell = "2"
+log = "0.4"
+tauri-plugin-log = "2"
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
