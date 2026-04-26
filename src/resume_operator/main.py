@@ -448,7 +448,7 @@ def bootstrap(
     # the LLM couldn't extract from the source PDF (URLs, per-role tech, skill
     # groupings, fallback headline).
     if should_run_interview(no_interview=no_interview):
-        master = run_interview(master, console=console)
+        master = run_interview(master, prompter=RichPrompter(console))
 
     save_master(master, output)
 

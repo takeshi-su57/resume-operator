@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from rich.console import Console
 
+from resume_operator.prompters import RichPrompter
 from resume_operator.state import (
     ExperienceBullet,
     ExperienceEntry,
@@ -38,6 +39,13 @@ def _silent_console() -> Console:
     import io
 
     return Console(file=io.StringIO(), force_terminal=False, record=False)
+
+
+def _silent_prompter() -> RichPrompter:
+    """A `RichPrompter` backed by a silent Console. Still routes prompts
+    through `rich.prompt.Prompt.ask` / `Confirm.ask` so tests can patch
+    those directly."""
+    return RichPrompter(_silent_console())
 
 
 def _minimal_master() -> ResumeMaster:
@@ -90,7 +98,7 @@ class TestRunInterviewHeadline:
             patch("rich.prompt.Prompt.ask", side_effect=lambda *a, **kw: next(answers)),
             patch("rich.prompt.Confirm.ask", return_value=False),
         ):
-            run_interview(master, console=_silent_console())
+            run_interview(master, prompter=_silent_prompter())
         assert master.headline == "Senior Engineer · 10+ years · Python"
 
     def test_skips_when_user_types_skip(self) -> None:
@@ -99,7 +107,7 @@ class TestRunInterviewHeadline:
             patch("rich.prompt.Prompt.ask", return_value="skip"),
             patch("rich.prompt.Confirm.ask", return_value=False),
         ):
-            run_interview(master, console=_silent_console())
+            run_interview(master, prompter=_silent_prompter())
         assert master.headline == ""
 
     def test_existing_headline_not_re_asked(self) -> None:
@@ -109,7 +117,7 @@ class TestRunInterviewHeadline:
             patch("rich.prompt.Prompt.ask", return_value="skip"),
             patch("rich.prompt.Confirm.ask", return_value=False),
         ):
-            run_interview(master, console=_silent_console())
+            run_interview(master, prompter=_silent_prompter())
         assert master.headline == "Pre-existing tagline"
 
 
@@ -130,7 +138,7 @@ class TestRunInterviewLinks:
             patch("rich.prompt.Prompt.ask", side_effect=lambda *a, **kw: next(answers)),
             patch("rich.prompt.Confirm.ask", return_value=False),
         ):
-            run_interview(master, console=_silent_console())
+            run_interview(master, prompter=_silent_prompter())
 
         labels = {lk.label for lk in master.links}
         assert labels == {"Portfolio", "LinkedIn"}
@@ -143,7 +151,7 @@ class TestRunInterviewLinks:
             patch("rich.prompt.Prompt.ask", return_value="skip"),
             patch("rich.prompt.Confirm.ask", return_value=False),
         ):
-            run_interview(master, console=_silent_console())
+            run_interview(master, prompter=_silent_prompter())
         # Still just the one pre-existing link.
         assert len(master.links) == 1
         assert master.links[0].label == "GitHub"
@@ -175,7 +183,7 @@ class TestRunInterviewPerRoleTech:
             patch("rich.prompt.Prompt.ask", side_effect=lambda *a, **kw: next(answers)),
             patch("rich.prompt.Confirm.ask", return_value=False),
         ):
-            run_interview(master, console=_silent_console())
+            run_interview(master, prompter=_silent_prompter())
 
         assert master.experience[0].tech == ["Python", "PostgreSQL", "Docker"]
         # exp-2's tech is untouched.
@@ -206,7 +214,7 @@ class TestRunInterviewSkillGrouping:
             patch("rich.prompt.Prompt.ask", side_effect=lambda *a, **kw: next(answers)),
             patch("rich.prompt.Confirm.ask", return_value=True),
         ):
-            run_interview(master, console=_silent_console())
+            run_interview(master, prompter=_silent_prompter())
 
         assert len(master.skill_groups) == 3
         categories = {g.category for g in master.skill_groups}
@@ -226,7 +234,7 @@ class TestRunInterviewSkillGrouping:
             patch("rich.prompt.Prompt.ask", side_effect=lambda *a, **kw: next(answers)),
             patch("rich.prompt.Confirm.ask", return_value=True),
         ):
-            run_interview(master, console=_silent_console())
+            run_interview(master, prompter=_silent_prompter())
 
         assert master.skill_groups == []
 
@@ -238,7 +246,7 @@ class TestRunInterviewSkillGrouping:
             patch("rich.prompt.Prompt.ask", return_value="skip"),
             patch("rich.prompt.Confirm.ask", return_value=False),  # declines grouping
         ):
-            run_interview(master, console=_silent_console())
+            run_interview(master, prompter=_silent_prompter())
 
         mock_propose.assert_not_called()
         assert master.skill_groups == []
@@ -252,7 +260,7 @@ class TestRunInterviewSkillGrouping:
             patch("rich.prompt.Prompt.ask", return_value="skip"),
             patch("rich.prompt.Confirm.ask", return_value=True),
         ):
-            run_interview(master, console=_silent_console())
+            run_interview(master, prompter=_silent_prompter())
 
         mock_propose.assert_not_called()
         assert master.skill_groups == []
