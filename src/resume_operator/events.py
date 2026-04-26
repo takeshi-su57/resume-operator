@@ -69,3 +69,27 @@ def bind_sink(sink: EventSink):  # type: ignore[no-untyped-def]
         yield sink
     finally:
         _current_sink.reset(token)
+
+
+@contextmanager
+def node_span(node: str, **start_data: Any):  # type: ignore[no-untyped-def]
+    """Emit `start` + `end` events around a block of work.
+
+    Usage in a node function:
+
+        def ats_score(state):
+            with node_span("ats_score"):
+                # ... work ...
+                return {"ats_score": score}
+
+    When no sink is bound (the CLI case), both `emit` calls are no-ops —
+    so wrapping a node in `node_span` costs effectively nothing.
+    """
+    emit(NodeEvent(node=node, phase="start", data=dict(start_data)))
+    try:
+        yield
+    except Exception as exc:
+        emit(NodeEvent(node=node, phase="error", data={"message": str(exc)}))
+        raise
+    else:
+        emit(NodeEvent(node=node, phase="end"))

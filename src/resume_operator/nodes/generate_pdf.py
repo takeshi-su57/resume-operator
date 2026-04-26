@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from resume_operator.config import get_settings
+from resume_operator.events import node_span
 from resume_operator.state import ResumeOptimizerState
 from resume_operator.tools.pdf_generator import generate_pdf as create_pdf
 from resume_operator.tools.style import StyleTemplate, load_style
@@ -18,6 +19,11 @@ DEFAULT_OUTPUT_PATH = "data/optimized_resume.pdf"
 
 def generate_pdf(state: ResumeOptimizerState) -> dict[str, Any]:
     """Render `state.tailored_resume` to a PDF using the configured template + style."""
+    with node_span("generate_pdf"):
+        return _generate_pdf_body(state)
+
+
+def _generate_pdf_body(state: ResumeOptimizerState) -> dict[str, Any]:
     logger.info("generate_pdf: starting")
     errors: list[str] = list(state.errors)
 

@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from resume_operator.events import node_span
 from resume_operator.state import (
     JobDescription,
     ResumeData,
@@ -25,6 +26,11 @@ def load_master_node(state: ResumeOptimizerState) -> dict[str, Any]:
     still consume `ResumeData` (ats_score, analyze_gaps, optimize_content)
     keep working until their migration in #026.
     """
+    with node_span("load_master"):
+        return _load_master_body(state)
+
+
+def _load_master_body(state: ResumeOptimizerState) -> dict[str, Any]:
     logger.info("load_master: starting")
     errors: list[str] = list(state.errors)
     result: dict[str, Any] = {}

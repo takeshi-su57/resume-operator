@@ -8,6 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
 
+from resume_operator.events import node_span
 from resume_operator.prompts.resume_parsing import PARSE_RESUME
 from resume_operator.state import (
     EducationEntry,
@@ -159,6 +160,11 @@ def parse_resume(state: ResumeOptimizerState) -> dict[str, Any]:
     ResumeData fields (name, experience, education, skills, etc.).
     Also reads the job description text from file or state.
     """
+    with node_span("parse_resume"):
+        return _parse_resume_body(state)
+
+
+def _parse_resume_body(state: ResumeOptimizerState) -> dict[str, Any]:
     logger.info("parse_resume: starting")
     errors: list[str] = list(state.errors)
     result: dict[str, Any] = {}

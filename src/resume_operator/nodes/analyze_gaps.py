@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
 
+from resume_operator.events import node_span
 from resume_operator.prompts.gap_analysis import ANALYZE_GAPS
 from resume_operator.state import GapAnalysis, ResumeOptimizerState
 from resume_operator.tools.llm_provider import get_structured_llm
@@ -28,6 +29,11 @@ def analyze_gaps(state: ResumeOptimizerState) -> dict[str, Any]:
     Uses ATS score results and full resume/job data to produce actionable
     suggestions for optimizing the resume content.
     """
+    with node_span("analyze_gaps"):
+        return _analyze_gaps_body(state)
+
+
+def _analyze_gaps_body(state: ResumeOptimizerState) -> dict[str, Any]:
     logger.info("analyze_gaps: starting")
     errors: list[str] = list(state.errors)
 

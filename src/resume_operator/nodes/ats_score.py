@@ -21,6 +21,7 @@ import logging
 from typing import Any
 
 from resume_operator.config import get_settings
+from resume_operator.events import node_span
 from resume_operator.state import (
     ATSReport,
     ContactCheck,
@@ -53,6 +54,11 @@ MEASURABLE_RESULTS_TARGET = 8
 
 def ats_score(state: ResumeOptimizerState) -> dict[str, Any]:
     """Score the master resume against the JD and produce a full `ATSReport`."""
+    with node_span("ats_score"):
+        return _ats_score_body(state)
+
+
+def _ats_score_body(state: ResumeOptimizerState) -> dict[str, Any]:
     logger.info("ats_score: starting")
     errors: list[str] = list(state.errors)
 
@@ -80,6 +86,11 @@ def ats_score_tailored(state: ResumeOptimizerState) -> dict[str, Any]:
     (optimization skipped or failed) the node leaves `state.ats_score` alone
     so the caller still sees the initial master-based score.
     """
+    with node_span("ats_score_tailored"):
+        return _ats_score_tailored_body(state)
+
+
+def _ats_score_tailored_body(state: ResumeOptimizerState) -> dict[str, Any]:
     logger.info("ats_score_tailored: starting")
 
     if not state.tailored_resume.items:

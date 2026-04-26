@@ -14,6 +14,7 @@ from typing import Any
 
 import yaml
 
+from resume_operator.events import node_span
 from resume_operator.state import ResumeOptimizerState
 from resume_operator.tools.diff_renderer import render_diff
 from resume_operator.tools.source_index import build_source_index
@@ -27,6 +28,11 @@ DIFF_PATH = Path("data/diff.md")
 
 def report_results(state: ResumeOptimizerState) -> dict[str, Any]:
     """Compile and save the full optimization report into the per-run folder."""
+    with node_span("report_results"):
+        return _report_results_body(state)
+
+
+def _report_results_body(state: ResumeOptimizerState) -> dict[str, Any]:
     logger.info("report_results: starting")
     errors: list[str] = list(state.errors)
 

@@ -18,6 +18,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
 
+from resume_operator.events import node_span
 from resume_operator.prompts.content_optimization import OPTIMIZE_CONTENT
 from resume_operator.state import (
     OptimizedResume,
@@ -47,6 +48,11 @@ class TailoredResumeLLMOutput(BaseModel):
 
 def optimize_content(state: ResumeOptimizerState) -> dict[str, Any]:
     """Produce a `TailoredResume` — per-item decisions over master + facts."""
+    with node_span("optimize_content"):
+        return _optimize_content_body(state)
+
+
+def _optimize_content_body(state: ResumeOptimizerState) -> dict[str, Any]:
     logger.info("optimize_content: starting")
     errors: list[str] = list(state.errors)
 
