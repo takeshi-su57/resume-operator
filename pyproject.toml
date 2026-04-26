@@ -23,6 +23,10 @@ dependencies = [
     "python-dotenv>=1.0",
     "pyyaml>=6.0",
     "python-docx>=1.1",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "python-multipart>=0.0.18",
+    "websockets>=13.0",
 ]
 
 [dependency-groups]
@@ -37,6 +41,7 @@ dev = [
 
 [project.scripts]
 resume-operator = "resume_operator.main:app"
+resume-operator-server = "resume_operator.server.main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/resume_operator"]
@@ -67,6 +72,8 @@ module = [
     "reportlab.*",
     "docx",
     "docx.*",
+    "uvicorn",
+    "uvicorn.*",
 ]
 ignore_missing_imports = true
 
