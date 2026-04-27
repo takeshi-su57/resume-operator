@@ -72,9 +72,7 @@ def run_pyinstaller() -> Path:
     ]
     subprocess.run(cmd, check=True, cwd=ROOT)
     binary_name = (
-        "resume-operator-server.exe"
-        if platform.system() == "Windows"
-        else "resume-operator-server"
+        "resume-operator-server.exe" if platform.system() == "Windows" else "resume-operator-server"
     )
     out = DIST_DIR / binary_name
     if not out.exists():
@@ -84,38 +82,82 @@ def run_pyinstaller() -> Path:
 
 def smoke_test(binary: Path, port: int = 7421, timeout: float = 90.0) -> None:
     """Boot the binary, hit /health, kill. Cheap proof the bundle isn't
-    missing a hidden import that only blows up at runtime."""
+    missing a hidden import that only blows up at runtime.
+
+    Spawns the binary in a new process group so we can kill the whole
+    tree on teardown — uvicorn forks a worker that holds the listening
+    socket on Windows, and signaling only the parent leaks the port
+    (Errno 10048 on the next bind).
+    """
     print(f"[build] Smoke-testing {binary.name} on port {port}...")
-    proc = subprocess.Popen(
-        [str(binary), "--port", str(port)],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-    )
+    cmd = [str(binary), "--port", str(port)]
+    if platform.system() == "Windows":
+        # CREATE_NEW_PROCESS_GROUP — required for `taskkill /T` to find
+        # the children. Lets us send CTRL_BREAK_EVENT later if we want
+        # a graceful uvicorn shutdown instead of taskkill.
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            creationflags=0x00000200,  # CREATE_NEW_PROCESS_GROUP
+        )
+    else:
+        # POSIX — start a fresh session so SIGTERM + group kill works.
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
     deadline = time.time() + timeout
     last_err: Exception | None = None
     try:
         while time.time() < deadline:
             try:
-                with urlopen(
-                    f"http://127.0.0.1:{port}/health", timeout=1
-                ) as resp:
+                with urlopen(f"http://127.0.0.1:{port}/health", timeout=1) as resp:
                     body = resp.read().decode("utf-8")
                     if resp.status == 200 and '"ok"' in body:
                         print(f"[build] OK ({body.strip()})")
                         return
-                    last_err = RuntimeError(
-                        f"unexpected /health response: {resp.status} / {body}"
-                    )
+                    last_err = RuntimeError(f"unexpected /health response: {resp.status} / {body}")
             except (URLError, ConnectionRefusedError) as exc:
                 last_err = exc
             time.sleep(0.5)
         raise RuntimeError(f"Smoke test timed out: {last_err}")
     finally:
-        proc.terminate()
+        _kill_tree(proc)
+
+
+def _kill_tree(proc: subprocess.Popen[bytes]) -> None:
+    """Tear down the smoke-test process and any children it spawned.
+
+    PyInstaller-bundled uvicorn runs the actual server in a forked
+    worker; on Windows, `proc.terminate()` only kills the parent and
+    leaves the worker holding the port. `taskkill /T /F` walks the
+    process tree.
+    """
+    if proc.poll() is not None:
+        return
+    if platform.system() == "Windows":
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    else:
+        import os
+        import signal
+
+        # POSIX-only — guarded by the Windows branch above.
         try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            proc.kill()
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)  # type: ignore[attr-defined]
+        except ProcessLookupError:
+            pass
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
 
 
 def install_into_tauri(binary: Path) -> Path:
