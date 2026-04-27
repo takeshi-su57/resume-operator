@@ -68,6 +68,19 @@ Driven by a post-v1 review that surfaced the architectural gap: the system re-pa
 | [028](028-langchain-structured-output.md) | Refactor | `with_structured_output` (drop manual JSON parsing) | Medium | — |
 | [029](029-per-application-output-folder.md) | Feature | Per-application versioned output folder | Medium | 026 |
 
+## Phase 8: Desktop GUI
+
+Driven by the observation that the iterative approval loop (#040) and enrichment interview (#033) — the highest-value moments in the tool — are flattened by the terminal. A six-PR effort to ship a Tauri 2 + React desktop app that exposes every CLI command as a screen, with a pro/dense Linear-style UI. The CLI stays as a peer surface; both invoke the same compiled LangGraph and the same flows behind a `Prompter` seam.
+
+| # | Type | Title | Priority | Depends On | GitHub |
+|---|------|-------|----------|------------|--------|
+| [043](043-fastapi-server-for-desktop-gui.md) | Feature | FastAPI + WebSocket server wrapping the tailor graph | High | 040, 042 | [#84](https://github.com/takeshi-su57/resume-operator/issues/84) / [PR #90](https://github.com/takeshi-su57/resume-operator/pull/90) |
+| [044](044-tauri-shell-settings-score.md) | Feature | Tauri 2 shell + Settings + Score screens | High | 043 | [#85](https://github.com/takeshi-su57/resume-operator/issues/85) / [PR #91](https://github.com/takeshi-su57/resume-operator/pull/91) |
+| [045](045-run-screen-approval-workspace.md) | Feature | Three-pane Run workspace + approval loop | High | 044 | [#86](https://github.com/takeshi-su57/resume-operator/issues/86) / [PR #92](https://github.com/takeshi-su57/resume-operator/pull/92) |
+| [046](046-enrichment-interview-cards.md) | Feature | Enrichment interview card stack | High | 045 | [#87](https://github.com/takeshi-su57/resume-operator/issues/87) / [PR #93](https://github.com/takeshi-su57/resume-operator/pull/93) |
+| [047](047-remaining-screens-home-cmdk.md) | Feature | Bootstrap / Parse / Style / Home / cmd-K | High | 046 | [#88](https://github.com/takeshi-su57/resume-operator/issues/88) / [PR #94](https://github.com/takeshi-su57/resume-operator/pull/94) |
+| [048](048-pyinstaller-tauri-msi.md) | Feature | PyInstaller sidecar + Tauri MSI installer | High | 047 | [#89](https://github.com/takeshi-su57/resume-operator/issues/89) / [PR #95](https://github.com/takeshi-su57/resume-operator/pull/95) |
+
 ## Dependency Graph
 
 ```
