@@ -5,6 +5,9 @@ node_modules/
 dist/
 src-tauri/target/
 src-tauri/gen/
+# PyInstaller-bundled sidecar — produced by `python pyinstaller/build.py`
+# at release time. Not source code; ~60 MB per platform.
+src-tauri/binaries/
 
 # Logs
 *.log

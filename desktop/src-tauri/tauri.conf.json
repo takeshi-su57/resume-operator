@@ -37,6 +37,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "externalBin": ["binaries/resume-operator-server"],
     "windows": {
       "certificateThumbprint": null,
       "digestAlgorithm": "sha256",

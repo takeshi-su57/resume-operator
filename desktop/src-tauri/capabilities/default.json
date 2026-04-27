@@ -11,6 +11,16 @@
     "shell:default",
     "shell:allow-open",
     "dialog:default",
-    "dialog:allow-open"
+    "dialog:allow-open",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "binaries/resume-operator-server",
+          "sidecar": true,
+          "args": ["--port", "7421", "--host", "127.0.0.1"]
+        }
+      ]
+    }
   ]
 }

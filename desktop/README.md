@@ -76,10 +76,35 @@ debugging the layout.
 
 ## Build
 
-```bash
-pnpm tauri:build
+The release pipeline bundles the Python server with PyInstaller and
+ships it as a Tauri sidecar inside the MSI installer.
+
+```powershell
+# From the repo root, on Windows with MSVC C++ tools installed:
+desktop/scripts/release.ps1
 ```
 
-Produces a Windows MSI under `src-tauri/target/release/bundle/msi/`.
-Phase 6 (#89) wires up the PyInstaller-bundled Python sidecar; until
-then `tauri build` produces a shell that needs the dev sidecar running.
+The script does, in order:
+
+1. **`uv sync`** — installs PyInstaller alongside the runtime deps.
+2. **`uv run python pyinstaller/build.py`** — runs PyInstaller from
+   `pyinstaller/resume_operator_server.spec`, smoke-tests the produced
+   binary by booting it on port 7421 and hitting `/health`, then
+   copies it into
+   `desktop/src-tauri/binaries/resume-operator-server-x86_64-pc-windows-msvc.exe`
+   with Tauri's per-target naming convention.
+3. **`pnpm install` + `pnpm tauri:build`** — Tauri picks up the
+   sidecar via `tauri.conf.json`'s `bundle.externalBin`, embeds it in
+   the MSI, and produces
+   `desktop/src-tauri/target/release/bundle/msi/resume-operator_0.1.0_x64_en-US.msi`.
+
+The Tauri shell launches the sidecar on startup
+([`src-tauri/src/lib.rs::spawn_sidecar`](src-tauri/src/lib.rs)) and
+terminates it when the window closes — the installed app is
+self-contained, with no `uv` or Python on PATH required.
+
+The MSI is **unsigned** by design — it's a personal-use installer.
+Windows SmartScreen will prompt on first run; click "More info →
+Run anyway." For shareable signed builds, set
+`bundle.windows.certificateThumbprint` to a real cert thumbprint and
+re-run `tauri build`.
