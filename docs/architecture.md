@@ -4,6 +4,63 @@
 
 resume-operator is a LangGraph-based pipeline that loads a hand-maintained master resume (YAML), scores ATS compatibility, analyzes gaps, optimizes content, and generates tailored PDFs. A legacy PDF-first input path is kept for back-compat and bootstrap.
 
+The engine is exposed through three peer surfaces, all driving the same compiled LangGraph and the same flows behind a `Prompter` seam:
+
+```
+                ┌─────────────────────────────────────────────────────────┐
+                │                                                         │
+                │   ┌──────────────┐    ┌──────────────┐                  │
+                │   │              │    │  Tauri 2     │                  │
+                │   │     CLI      │    │  Desktop     │                  │
+                │   │  (Typer +    │    │  (React +    │                  │
+                │   │     Rich)    │    │     TS)      │                  │
+                │   └──────┬───────┘    └──────┬───────┘                  │
+                │          │                   │                          │
+                │          │                   │ HTTP + WebSocket         │
+                │          │                   │ on 127.0.0.1:7421        │
+                │          │                   ▼                          │
+                │          │          ┌─────────────────────┐             │
+                │          │          │  resume-operator-   │             │
+                │          │          │     server          │             │
+                │          │          │  (FastAPI + uvicorn)│             │
+                │          │          └─────────┬───────────┘             │
+                │          │                    │                         │
+                │          │   RichPrompter     │   WebSocketPrompter     │
+                │          ▼                    ▼                         │
+                │   ┌─────────────────────────────────────┐               │
+                │   │       Prompter protocol              │              │
+                │   │  (confirm / choose / text /          │              │
+                │   │   render_proposal / render_question) │              │
+                │   └─────────────────┬────────────────────┘              │
+                │                     │                                   │
+                │                     ▼                                   │
+                │   ┌─────────────────────────────────────┐               │
+                │   │  flows/  (run_approval_loop,         │              │
+                │   │           run_auto_enrich)           │              │
+                │   │  tools/  (run_approval_flow,         │              │
+                │   │           run_interactive_session,   │              │
+                │   │           run_interview)             │              │
+                │   └─────────────────┬────────────────────┘              │
+                │                     │                                   │
+                │                     ▼                                   │
+                │   ┌─────────────────────────────────────┐               │
+                │   │       LangGraph StateGraph           │              │
+                │   │   (build_score / build_tailor /      │              │
+                │   │    build_finalize)                   │              │
+                │   │   ResumeOptimizerState flows through │              │
+                │   └─────────────────┬────────────────────┘              │
+                │                     │                                   │
+                │            nodes/   │   tools/   prompts/               │
+                │           (every node wrapped in `with node_span`)      │
+                │                                                         │
+                │      events.NodeEventEmitter — emits {node, phase}      │
+                │      to the active EventSink (server only; CLI no-op)   │
+                │                                                         │
+                └─────────────────────────────────────────────────────────┘
+```
+
+The shipped distribution is the **Tauri MSI**: the Rust shell launches the PyInstaller-bundled server as a sidecar at startup and tears it down on window close — the user's machine doesn't need `uv` or Python.
+
 ## Agent Flow
 
 ```
@@ -88,13 +145,20 @@ The sub-dimension check is deliberate: a single high composite can mask a degrad
 
 | Component | Location | Purpose |
 |-----------|----------|---------|
-| CLI | `main.py` | Typer commands: run, score, parse-resume, bootstrap |
-| Graph | `graph.py` | LangGraph StateGraph with conditional routing |
-| State | `state.py` | Pydantic model flowing through all nodes (`ResumeMaster`, `ResumeData`, `ATSScore`, …) |
-| Nodes | `nodes/` | One function per file, returns state delta |
-| Tools | `tools/` | I/O utilities (PDF, LLM, YAML, JSON parsing) |
+| CLI | `main.py` | Typer commands: run, score, parse-resume, bootstrap, extract-style |
+| Graph | `graph.py` | LangGraph StateGraph with conditional routing (three graphs: score, tailor, finalize) |
+| State | `state.py` | Pydantic model flowing through all nodes (`ResumeMaster`, `ResumeData`, `ATSScore`, `TailoredResume`, `Proposal`, …) |
+| Nodes | `nodes/` | One function per file, returns state delta. Public function wraps `with node_span(name)` for live timeline events. |
+| Tools | `tools/` | I/O utilities (PDF, LLM, YAML, approval flow, enrich, bootstrap interview, source index, style template) |
 | Prompts | `prompts/` | LLM prompt templates |
 | Config | `config.py` | Pydantic Settings from env vars |
+| **Prompter** | `prompter.py`, `prompters/` | Protocol abstracting user interaction; `RichPrompter` is the CLI impl |
+| **Flows** | `flows/` | `run_approval_loop`, `run_auto_enrich` — orchestration that takes a `Prompter`. Lifted out of `main.py` so the same logic serves both CLI and server. |
+| **Events** | `events.py` | `NodeEventEmitter` ContextVar + `node_span` context manager for live node timeline events (no-op when no `EventSink` is bound) |
+| **Server** | `server/` | FastAPI app + WebSocket prompter; routes mirror CLI commands. Used by the desktop shell. |
+| **Desktop frontend** | `desktop/src/` | React + TypeScript; consumes the server over HTTP + WebSocket. Three-pane Run workspace, six other screens, cmd-K palette. |
+| **Desktop shell** | `desktop/src-tauri/` | Tauri 2 Rust shell — sidecar lifecycle, MSI bundle config. |
+| **Sidecar bundle** | `pyinstaller/` | PyInstaller spec + build script that produces a single-file Python binary the Tauri shell embeds. |
 
 ## Data Flow
 
@@ -176,3 +240,100 @@ Slug priority: explicit `JobDescription.company` (when known) → JD filename st
 - Each node catches exceptions and records them in `state.errors`
 - Pipeline continues on failure — downstream nodes check preconditions
 - Final report includes all accumulated errors
+
+## Desktop GUI Layer
+
+Phase 8 (specs `docs/issues/043-048`) ships a Tauri 2 + React desktop app. The architecture splits into three concerns:
+
+### 1. The server — `src/resume_operator/server/`
+
+A FastAPI + uvicorn app that wraps the same compiled LangGraph the CLI invokes. Routes:
+
+| Route | Kind | Purpose |
+|---|---|---|
+| `GET /health` | HTTP | Sidecar liveness probe — returns `{status, llm_provider, llm_model}` in microseconds. |
+| `GET /api/settings`, `PUT /api/settings` | HTTP | Read with API keys masked (`sk-p…7890`); write persists to `.env` via `python-dotenv` and invalidates the `get_settings` cache. |
+| `POST /api/score` | HTTP | `build_score_graph().invoke({master, job})` → `ATSReport` JSON. |
+| `POST /api/parse-resume` | HTTP | `parse_resume_node(state)` → `ResumeData` JSON. |
+| `POST /api/extract-style` | HTTP | `extract_style_from_docx(...)` → `StyleTemplate` JSON, optionally writing the YAML. |
+| `WS /api/ws/run` | WebSocket | Full pipeline (tailor → optional enrich → optional approval loop → finalize). |
+| `WS /api/ws/bootstrap` | WebSocket | PDF parse → senior-format interview → master YAML write. |
+
+The CLI is unchanged; the server is a peer surface, not a replacement. Both paths run the same `build_score_graph()` / `build_tailor_graph()` / `build_finalize_graph()` — no duplicated business logic.
+
+### 2. The Prompter seam
+
+Interactive flows used to call `rich.prompt.Prompt.ask` directly. They now take a `Prompter` and call protocol methods (`confirm`, `choose`, `text`, `render_proposal`, `render_question`, `render_polished`, `notice`, `panel`, `status`).
+
+Two implementations:
+
+- **`RichPrompter`** (`src/resume_operator/prompters/rich_prompter.py`) — CLI. Wraps `rich.console.Console` + `Prompt.ask` + `Confirm.ask` + `Status` + `Panel`. Output is byte-identical to the pre-refactor CLI.
+- **`WebSocketPrompter`** (`src/resume_operator/server/ws_prompter.py`) — server. Sync methods bridge to async via `asyncio.run_coroutine_threadsafe` (outbound `ws.send_json`) + `queue.Queue` (inbound replies deposited by the WS route handler). The flow runs in `asyncio.to_thread`; the route's coroutine handles the WS message pump.
+
+Closing the socket mid-flow raises `PrompterDisconnectedError` inside the worker thread so the flow returns early instead of deadlocking on an unanswered prompt.
+
+### 3. The WebSocket protocol
+
+For interactive routes, client opens the WS, sends one `{type: "start", params: {...}}`, then responds to server prompts:
+
+**Server → client** messages:
+
+```json
+{"type": "node_event",        "node": "ats_score", "phase": "start", ...}
+{"type": "render_iteration_header", "iteration": 2, "max_iter": 3, "score": 0.78}
+{"type": "render_proposal",   "proposal": {...}, "index": 1, "total": 5}
+{"type": "render_question",   "question": {...}, "index": 1, "total": 5}
+{"type": "render_polished",   "polished": {...}}
+{"type": "confirm",           "message": "Accept this tailored version?", "default": false}
+{"type": "choose",            "message": "[a]ccept...", "choices": ["a","e","r","s","q"], "default": "a"}
+{"type": "text",              "message": "What should change?", "default": ""}
+{"type": "notice" | "panel",  "message": "...", "style": "yellow"}
+{"type": "status_start" | "status_end", "message": "..."}
+{"type": "done",              "result": {...}}
+{"type": "error",             "message": "..."}
+```
+
+**Client → server** messages:
+
+```json
+{"type": "start", "params": {...}}
+{"type": "reply", "value": true | false | "y" | "your text"}
+```
+
+Every server message variant lives on a discriminated union in [`desktop/src/lib/events.ts`](../desktop/src/lib/events.ts) (TS) and emerges from the `WebSocketPrompter` methods (Python). New prompter primitives surface as a TypeScript compile error in the dispatcher's exhaustive switch.
+
+### 4. Live node events
+
+The server route handlers bind a `WebSocketEventSink` via `events.bind_sink(...)` for the duration of a flow. Any node wrapped in `with node_span("name")` emits `{node, phase, timestamp, data}` events the frontend renders as a live timeline (left pane of the Run workspace). CLI runs don't bind a sink — the emit calls become a `_current_sink.get()` → `None` check, zero cost.
+
+### 5. The desktop frontend — `desktop/src/`
+
+React 18 + TypeScript strict + Vite + Tailwind v3 + Radix UI primitives. Linear-style aesthetic — single accent (cyan-400), JetBrains Mono body, hairline borders, compact rows. Every CLI command has a screen counterpart:
+
+| Screen | Route | Server endpoint | Notes |
+|---|---|---|---|
+| Home | `/` | `/health` | Quick-action tiles + engine status. |
+| Run | `/run` | `WS /api/ws/run` | Three-pane workspace: live node timeline (left) + active proposal/question/iteration card (center) + session sidebar (right). |
+| Score | `/score` | `POST /api/score` | Multi-dim ATS report with status glyphs + per-skill tables. |
+| Bootstrap | `/bootstrap` | `WS /api/ws/bootstrap` | PDF + senior-format interview. |
+| Parse PDF | `/parse` | `POST /api/parse-resume` | Read-only inspector. |
+| Extract Style | `/style` | `POST /api/extract-style` | StyleTemplate preview + optional YAML write. |
+| Settings | `/settings` | `GET/PUT /api/settings` | Form for every env var; API keys masked. |
+
+Cmd+K palette mounted at the App shell — navigation only in this phase.
+
+The Run screen's state machine (`desktop/src/state/run-session.ts`) buffers what the panes display: phase enum, append-only logs (node events, iteration history, status spinner stack, approved/rejected proposals, accepted enrichment items), the open prompt, the final result. The controller hook (`use-run-controller.ts`) wires `useFlowSocket` to the store; it's the only thing that talks to the socket. Action methods (`acceptProposal`, `beginRejectProposal`, `sendFixFeedback`, etc.) map to typed `{type: "reply", ...}` messages.
+
+### 6. The sidecar lifecycle — `desktop/src-tauri/src/lib.rs`
+
+In bundled mode (the MSI install), Tauri's `shell.sidecar(...)` resolves the bundled `resume-operator-server` binary by joining the app resource dir with the configured name (`bundle.externalBin` in `tauri.conf.json`). On startup, `spawn_sidecar` runs it with `["--port", "7421", "--host", "127.0.0.1"]` and stashes the `CommandChild` in a `SidecarState(Mutex<Option<...>>)` managed state. On window close / app exit, `terminate_sidecar` calls `child.kill()`.
+
+In dev mode (`pnpm tauri:dev`), the binary is missing — the helper logs a warning and tolerates it. The developer keeps `uv run resume-operator-server` running in a separate terminal.
+
+### 7. The PyInstaller bundle — `pyinstaller/`
+
+`pyinstaller/resume_operator_server.spec` declares the entry point + hidden imports for the lazy LLM-provider modules in `tools/llm_provider.py` and uvicorn's runtime-loaded protocol / loop / lifespan submodules. Excludes tkinter / pytest / unittest to keep the binary closer to 60 MB.
+
+`pyinstaller/build.py` is the one-shot wrapper: PyInstaller → smoke-test (boot + `/health` + kill) → copy into `desktop/src-tauri/binaries/resume-operator-server-<rust-target-triple>.exe`.
+
+One subtle but critical fix in `src/resume_operator/server/main.py`: the FastAPI app is imported by reference (not via the `"resume_operator.server.app:app"` string form uvicorn defaults to). PyInstaller's static analysis can't follow string-loaded modules, so the bundled sidecar would crash with `ModuleNotFoundError: No module named 'resume_operator.server'` at launch. Reload mode keeps using the string form because uvicorn's hot reloader needs the qualified module path — but reload is dev-only and never enabled in the bundle.
