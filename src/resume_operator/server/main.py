@@ -1,8 +1,13 @@
 """`resume-operator-server` console entry point.
 
 Thin wrapper around uvicorn that boots the FastAPI app from `app.py`.
-Kept deliberately minimal so the Tauri sidecar (Phase 2, #85) can launch
+Kept deliberately minimal so the Tauri sidecar (Phase 6, #89) can launch
 it with a fixed port flag and nothing else.
+
+The app is imported by reference (not by string path) so that
+PyInstaller's static analysis picks up the full module graph — under
+the bundled sidecar, dynamic string-based imports through uvicorn
+fail with `ModuleNotFoundError: No module named 'resume_operator.server'`.
 """
 
 from __future__ import annotations
@@ -13,6 +18,7 @@ import typer
 import uvicorn
 
 from resume_operator.config import get_settings
+from resume_operator.server.app import app as fastapi_app
 
 cli = typer.Typer(name="resume-operator-server", add_completion=False)
 
@@ -34,13 +40,25 @@ def run(
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         datefmt="%H:%M:%S",
     )
-    uvicorn.run(
-        "resume_operator.server.app:app",
-        host=host,
-        port=port,
-        reload=reload,
-        log_level=level,
-    )
+    # Reload mode requires the string form for uvicorn to track changes;
+    # bundled (PyInstaller) sidecar uses the imported `fastapi_app`
+    # object so PyInstaller's static analysis picks up the full
+    # module graph — string-based imports fail at runtime in the bundle.
+    if reload:
+        uvicorn.run(
+            "resume_operator.server.app:app",
+            host=host,
+            port=port,
+            reload=True,
+            log_level=level,
+        )
+    else:
+        uvicorn.run(
+            fastapi_app,
+            host=host,
+            port=port,
+            log_level=level,
+        )
 
 
 def main() -> None:

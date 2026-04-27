@@ -35,6 +35,9 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+# Our PyInstaller spec lives in `pyinstaller/` and is hand-authored —
+# keep it tracked despite the blanket `*.spec` rule above.
+!pyinstaller/*.spec
 
 # Installer logs
 pip-log.txt
