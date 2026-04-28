@@ -78,7 +78,10 @@ export function HomeScreen() {
   const ok = !!health && !isError;
 
   return (
-    <div className="overflow-y-auto p-8 max-w-5xl mx-auto">
+    // App shell's <main> is `overflow-hidden` — child needs `h-full`
+    // for `overflow-y-auto` to engage (otherwise it sizes to content
+    // and gets clipped by main).
+    <div className="h-full overflow-y-auto p-8 max-w-5xl mx-auto w-full">
       <header className="mb-8">
         <h1 className="text-lg font-bold text-fg">resume-operator</h1>
         <p className="mt-1 text-sm text-fg-dim">

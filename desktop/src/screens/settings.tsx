@@ -101,8 +101,12 @@ export function SettingsScreen() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl p-6">
-      <header className="flex items-center justify-between mb-6">
+    // The App shell's <main> uses `overflow-hidden`, so each screen
+    // owns its own scroll container. This is a tall single-column
+    // form, so the whole page scrolls vertically.
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto max-w-3xl p-6">
+        <header className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-sm font-bold text-fg">Settings</h1>
           <p className="mt-1 text-xs text-fg-dim leading-relaxed">
@@ -265,6 +269,7 @@ export function SettingsScreen() {
             ))}
           </div>
         </Section>
+      </div>
       </div>
     </div>
   );
