@@ -1,31 +1,23 @@
-"""`POST /api/score` — wrap the [score CLI command](src/lucky_resume/main.py).
+"""Score-session flow — wraps `build_score_graph` for the task runner.
 
-Accepts absolute or project-relative paths to a master YAML (or legacy
-resume PDF) and a job description text file. Runs `build_score_graph`
-and returns the resulting `ATSScore`. No interactive state — plain
-request/response.
-
-Since the server runs on localhost, file paths are the natural contract
-(matching how the Tauri shell acquires them via the OS file dialog).
-Multipart uploads are avoidable.
-
-Alongside the ATS report, the response carries a slim `MasterView`
-echoing the loaded master content (contact values, summary, experience,
-education, skills). The frontend uses it to expand the Score dashboard's
-structural rows from "present / missing" booleans into the actual data,
-so Bruno can read the resume the score was computed against without
-a second trip through the file picker.
+Same business logic as the (now-deleted) `POST /api/score` route, but
+shaped to fit the `(params, prompter) -> dict` contract the task runner
+expects. The score graph is non-interactive — it doesn't call any
+prompter methods that block on user input — but we still drape a
+`prompter.status(...)` around the invocation so the event log carries a
+visible "Computing ATS score..." span clients can render while waiting.
 """
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
 from lucky_resume.graph import build_score_graph
+from lucky_resume.prompter import Prompter
 from lucky_resume.state import (
     ATSScore,
     EducationEntry,
@@ -36,16 +28,18 @@ from lucky_resume.state import (
     SkillGroup,
 )
 
-router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
-class ScoreRequest(BaseModel):
-    master: str | None = None  # path to master_resume.yaml
-    resume: str | None = None  # path to resume PDF (legacy)
-    job: str  # path to job description text file
+class ScoreParams(BaseModel):
+    """Identical shape to the legacy `ScoreRequest`."""
+
+    master: str | None = None
+    resume: str | None = None
+    job: str
 
     @model_validator(mode="after")
-    def _exactly_one_source(self) -> ScoreRequest:
+    def _exactly_one_source(self) -> ScoreParams:
         if not self.master and not self.resume:
             raise ValueError("provide either `master` or `resume`")
         if self.master and self.resume:
@@ -75,24 +69,10 @@ class MasterView(BaseModel):
     skill_groups: list[SkillGroup] = Field(default_factory=list)
 
 
-class ScoreResponse(BaseModel):
+class ScoreResult(BaseModel):
     ats_score: ATSScore
     errors: list[str]
-    # Optional so legacy PDF inputs still parse cleanly when the master
-    # isn't loaded — the dashboard hides expanded details when missing.
     master_view: MasterView | None = None
-
-
-def _validate_paths(req: ScoreRequest) -> None:
-    for label, value in (("master", req.master), ("resume", req.resume), ("job", req.job)):
-        if value is None:
-            continue
-        p = Path(value)
-        if not p.exists() or not p.is_file():
-            raise HTTPException(
-                status_code=400,
-                detail=f"{label} path does not exist or is not a file: {value}",
-            )
 
 
 def _master_to_view(master: ResumeMaster) -> MasterView:
@@ -167,22 +147,42 @@ def _build_master_view(result: dict[str, Any]) -> MasterView | None:
     return None
 
 
-@router.post("/score", response_model=ScoreResponse)
-def score(req: ScoreRequest) -> ScoreResponse:
-    _validate_paths(req)
+def _validate_paths(params: ScoreParams) -> None:
+    for label, value in (
+        ("master", params.master),
+        ("resume", params.resume),
+        ("job", params.job),
+    ):
+        if value is None:
+            continue
+        p = Path(value)
+        if not p.exists() or not p.is_file():
+            raise ValueError(f"{label} path does not exist or is not a file: {value}")
 
-    initial: dict[str, Any] = {"job_description_path": req.job}
-    if req.master:
-        initial["master_path"] = req.master
+
+def execute_score(raw_params: dict[str, Any], prompter: Prompter) -> dict[str, Any]:
+    """Run the score graph against `raw_params`. Runs in a background thread."""
+    params = ScoreParams.model_validate(raw_params)
+    _validate_paths(params)
+
+    initial: dict[str, Any] = {"job_description_path": params.job}
+    if params.master:
+        initial["master_path"] = params.master
     else:
-        initial["resume_path"] = req.resume
+        initial["resume_path"] = params.resume
 
-    result = build_score_graph().invoke(initial)
+    with prompter.status("Computing ATS score..."):
+        return build_score_graph().invoke(initial)
+
+
+def serialize_score_result(result: dict[str, Any]) -> dict[str, Any]:
+    """Turn the score graph's loose dict into the `ScoreResult` shape."""
     ats = result.get("ats_score") or ATSScore()
     if not isinstance(ats, ATSScore):
         ats = ATSScore.model_validate(ats)
-    return ScoreResponse(
+    payload = ScoreResult(
         ats_score=ats,
         errors=list(result.get("errors", [])),
         master_view=_build_master_view(result),
     )
+    return payload.model_dump(exclude_none=False)

@@ -18,10 +18,10 @@ from lucky_resume.server.routes import (
     files,
     health,
     parse_resume,
-    run,
-    score,
     settings,
+    tasks,
 )
+from lucky_resume.server.tasks.lifecycle import reconcile_on_startup
 
 
 def create_app() -> FastAPI:
@@ -47,13 +47,20 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(settings.router, prefix="/api")
-    app.include_router(score.router, prefix="/api")
     app.include_router(parse_resume.router, prefix="/api")
     app.include_router(extract_style.router, prefix="/api")
     app.include_router(bootstrap.router, prefix="/api")
-    app.include_router(run.router, prefix="/api")
     app.include_router(files.router, prefix="/api")
     app.include_router(config.router, prefix="/api")
+    app.include_router(tasks.router, prefix="/api")
+
+    @app.on_event("startup")
+    def _reconcile_tasks() -> None:
+        # Mark any task left running/awaiting_input by a previous
+        # sidecar process as `interrupted`, so the UI can render an
+        # honest history instead of zombie "in progress" rows.
+        reconcile_on_startup()
+
     return app
 
 

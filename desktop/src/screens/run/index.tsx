@@ -1,37 +1,27 @@
-import { useState } from "react";
+import { Route, Routes, useParams } from "react-router-dom";
 
-import { useRunSession } from "@/state/run-session";
-
-import { RunInputs, type RunInputs as RunInputsType } from "./inputs";
-import { useRunController } from "./use-run-controller";
-import { RunWorkspace } from "./workspace";
+import { RunDetailScreen } from "./detail";
+import { RunListScreen } from "./list";
+import { RunNewScreen } from "./new-run";
 
 /**
- * Top-level Run screen — owns the choice between the pre-flight
- * inputs form and the live three-pane workspace. Once a run starts,
- * the workspace stays mounted (controller + zustand store hold all
- * the state) until the user clicks "New run" from the done/error
- * status pane.
+ * Run-screen router — list at `/run`, inputs at `/run/new`, detail at
+ * `/run/:taskId`. A nested `<Routes>` (mounted under the splat in
+ * `App.tsx`) keeps the navigation surface independent of the top-level
+ * shell.
  */
 export function RunScreen() {
-  const controller = useRunController();
-  const phase = useRunSession((s) => s.phase);
-  const [inWorkspace, setInWorkspace] = useState(false);
+  return (
+    <Routes>
+      <Route index element={<RunListScreen />} />
+      <Route path="new" element={<RunNewScreen />} />
+      <Route path=":taskId" element={<RunDetailRoute />} />
+    </Routes>
+  );
+}
 
-  const onSubmit = (inputs: RunInputsType) => {
-    controller.beginRun(inputs);
-    setInWorkspace(true);
-  };
-
-  const reset = () => {
-    controller.disconnect();
-    useRunSession.getState().reset();
-    setInWorkspace(false);
-  };
-
-  if (!inWorkspace || phase === "idle") {
-    return <RunInputs onSubmit={onSubmit} />;
-  }
-
-  return <RunWorkspace controller={controller} onReset={reset} />;
+function RunDetailRoute() {
+  const { taskId } = useParams();
+  if (!taskId) return <RunListScreen />;
+  return <RunDetailScreen taskId={taskId} />;
 }

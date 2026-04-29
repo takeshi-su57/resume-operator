@@ -55,6 +55,25 @@ def emit(event: NodeEvent) -> None:
         sink.emit(event)
 
 
+def emit_progress(node: str, *, step: str, label: str, **detail: Any) -> None:
+    """Emit a `phase="progress"` event with the standard `step`/`label`/`detail` shape.
+
+    Sub-step events let the UI render granular progress *inside* a single
+    LangGraph node — e.g. `ats_score` is a single node but internally
+    runs five distinct phases (structural checks, extract keywords,
+    derive matches, tone, compose). Each phase emits one of these.
+
+    Convention: `step` is a stable machine identifier the frontend can
+    key on (e.g. `"extract_keywords"`); `label` is human-friendly text
+    (e.g. `"Extracting JD keywords"`); arbitrary extra fields land in
+    `data["detail"]` for renders that want counts or names.
+    """
+    data: dict[str, Any] = {"step": step, "label": label}
+    if detail:
+        data["detail"] = detail
+    emit(NodeEvent(node=node, phase="progress", data=data))
+
+
 @contextmanager
 def bind_sink(sink: EventSink):  # type: ignore[no-untyped-def]
     """Bind `sink` as the active sink for the duration of the `with` block.

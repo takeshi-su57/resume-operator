@@ -31,6 +31,26 @@ _APP_NAME = "lucky-resume"
 _ENV_OVERRIDE_VAR = "RESUME_OPERATOR_ENV_FILE"
 
 
+def app_data_dir() -> Path:
+    """Return the per-user app-data root (`%APPDATA%\\lucky-resume\\` on Windows).
+
+    Same `platformdirs` resolution as `env_file_path` so anything that wants
+    to persist sidecar state (env, task history, ...) lands under one root.
+    """
+    return user_config_path(_APP_NAME, appauthor=False, roaming=True)
+
+
+def tasks_dir() -> Path:
+    """Return the directory where task records (one JSON per task) live.
+
+    Created on demand. Lives under `app_data_dir()` so a user's task
+    history survives MSI reinstalls and roaming-profile syncs.
+    """
+    path = app_data_dir() / "tasks"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def env_file_path() -> Path:
     """Return the absolute path of the runtime ``.env`` file.
 

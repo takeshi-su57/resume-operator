@@ -1,10 +1,14 @@
-"""`WS /api/ws/run` — full pipeline with interactive approval loop and auto-enrich.
+"""Run-session flow — full optimization pipeline driven by a `Prompter`.
 
 Mirrors the CLI `run` command end-to-end: load master/resume, tailor,
-optionally enrich, optionally approve iteratively, finalize. The client
-opens a WebSocket, sends one `{"type": "start", "params": {...}}`
-message, and then responds to prompter messages (`confirm` / `choose` /
-`text`) until `{"type": "done", "result": {...}}` arrives.
+optionally enrich, optionally approve iteratively, finalize. Same
+business logic that previously lived in the (now-deleted)
+`WS /api/ws/run` route handler — extracted here so the task runner can
+spawn it without depending on a route module.
+
+The function signature is `(params: dict, prompter: Prompter) -> dict`.
+The prompter is duck-typed so this works against either the legacy
+`WebSocketPrompter` or the registry-backed `TaskPrompter`.
 """
 
 from __future__ import annotations
@@ -13,21 +17,17 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, WebSocket
 from pydantic import BaseModel, Field
 
 from lucky_resume.config import get_settings
 from lucky_resume.flows.approval import run_approval_loop
 from lucky_resume.flows.enrich import DEFAULT_FACTS_PATH, run_auto_enrich
 from lucky_resume.graph import build_finalize_graph, build_tailor_graph
-from lucky_resume.server.session_runner import run_flow_over_ws
-from lucky_resume.server.ws_prompter import WebSocketPrompter
+from lucky_resume.prompter import Prompter
 from lucky_resume.state import ResumeOptimizerState, TailoredResume
 from lucky_resume.tools.output_dir import resolve_output_dir
 
 logger = logging.getLogger(__name__)
-
-router = APIRouter()
 
 
 class RunParams(BaseModel):
@@ -47,8 +47,8 @@ class RunParams(BaseModel):
 def _should_offer_enrich(
     result: dict[str, Any], *, no_enrich: bool, master_path: str | None
 ) -> bool:
-    """GUI equivalent of `main._should_offer_enrich` — no TTY check, the
-    WebSocket itself is the interactivity signal."""
+    """No-TTY equivalent of `main._should_offer_enrich` — for GUI sessions
+    the active session itself is the interactivity signal."""
     if no_enrich or master_path is None:
         return False
     report = result.get("report", {})
@@ -94,10 +94,9 @@ def _build_initial(params: RunParams) -> dict[str, str]:
     return initial
 
 
-def _execute_run(raw_params: dict[str, Any], prompter: WebSocketPrompter) -> dict[str, Any]:
+def execute_run(raw_params: dict[str, Any], prompter: Prompter) -> dict[str, Any]:
     """Sync mirror of the CLI `run` command — drives the same flows with
-    a `WebSocketPrompter` instead of `RichPrompter`. Runs in a background
-    thread via `run_flow_over_ws`."""
+    a prompter-of-some-kind. Runs in a background thread."""
     params = RunParams.model_validate(raw_params)
     initial = _build_initial(params)
     jd_path = Path(params.job)
@@ -131,7 +130,9 @@ def _execute_run(raw_params: dict[str, Any], prompter: WebSocketPrompter) -> dic
     # --- Iterative approval loop (#78) ---
     if _should_run_approval_loop(result, no_approve=params.no_approve):
         effective_max_iter = (
-            params.max_iter if params.max_iter is not None else get_settings().resume_max_iterations
+            params.max_iter
+            if params.max_iter is not None
+            else get_settings().resume_max_iterations
         )
         result = run_approval_loop(
             prompter=prompter,
@@ -148,7 +149,7 @@ def _execute_run(raw_params: dict[str, Any], prompter: WebSocketPrompter) -> dic
     return result
 
 
-def _serialize_run_result(result: dict[str, Any]) -> dict[str, Any]:
+def serialize_run_result(result: dict[str, Any]) -> dict[str, Any]:
     """Turn a `ResumeOptimizerState`-shaped dict into plain JSON for the client.
 
     The graph returns a mix of Pydantic models and scalars; route them
@@ -162,9 +163,7 @@ def _serialize_run_result(result: dict[str, Any]) -> dict[str, Any]:
         # Fall back to a loose dump — better to surface a partial result
         # than crash on serialization right at the end.
         logger.warning("run result serialization fell back to shallow dump")
-        return {k: (v.model_dump() if hasattr(v, "model_dump") else v) for k, v in result.items()}
-
-
-@router.websocket("/ws/run")
-async def ws_run(ws: WebSocket) -> None:
-    await run_flow_over_ws(ws, flow_fn=_execute_run, serialize_result=_serialize_run_result)
+        return {
+            k: (v.model_dump() if hasattr(v, "model_dump") else v)
+            for k, v in result.items()
+        }

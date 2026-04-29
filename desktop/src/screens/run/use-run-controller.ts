@@ -1,220 +1,133 @@
 import { useCallback, useEffect, useRef } from "react";
 
 import type { ServerMessage } from "@/lib/events";
-import { useFlowSocket } from "@/lib/ws";
 import { useRunSession } from "@/state/run-session";
+import { useTaskStore } from "@/state/task-store";
 
 /**
- * The brains of the run screen — wires `/api/ws/run` to the
- * `useRunSession` zustand store and exposes one method per user
- * decision (`acceptVersion`, `rejectVersion`, `acceptProposal`, etc.).
+ * Run controller — bridges a registered backend task into the
+ * `useRunSession` store the legacy three-pane workspace already
+ * understands.
  *
- * Two passes through the WebSocket protocol drive the state machine:
+ * Two passes through the task's event log drive the state machine:
  *
- *   - **Outbound from the server** are dispatched in `handleMessage`,
- *     mutating the session store. Pending prompts (`confirm` / `choose`
- *     / `text`) are captured into `pendingPrompt` so the UI knows what
- *     panel to show and what reply shape to send back.
+ *   - **Wire-format events** (`node_event`, `confirm`, `choose`, etc.)
+ *     are dispatched into `useRunSession` exactly like the legacy
+ *     `useFlowSocket`-based controller did. The task's `events` array
+ *     is the authoritative log; we replay any newly-appended slice on
+ *     every store update.
  *
- *   - **User actions** call methods on this controller, which inspect
- *     the open prompt's `type` and the in-flight server context (was
- *     this confirm asking about an iteration accept? About continuing
- *     past the cap?) and reply with the right value.
+ *   - **Task-level state** (`status`, `result`, `error`) is mirrored
+ *     into `useRunSession.phase` and `setResult` / `setError` so the
+ *     existing workspace components (which key off `phase`) keep
+ *     working without modification.
  *
- * The CLI-side wording on `confirm` messages is the source of truth
- * for routing — Phase 1's flows preserve the exact prompt strings, so
- * we match against substrings ("Accept this tailored version", "Start
- * an enrichment session") to disambiguate. If wording changes
- * upstream, the controller routes wrong; the alternative — adding a
- * `kind` field to every prompter call — is a Phase 1+ refactor we
- * deliberately deferred.
+ * The CLI-side wording on `confirm` messages remains the source of
+ * truth for routing — exact same substring-matching as the legacy
+ * controller. Phase 5 deliberately preserves that behavior so the
+ * proposal / enrich / iteration panels don't all need to be rewritten
+ * in the same PR.
  */
-
-type StartParams = {
-  master: string;
-  facts?: string;
-  job: string;
-  output?: string;
-  style?: string;
-  no_enrich: boolean;
-  no_approve: boolean;
-  max_iter?: number;
-};
 
 const ACCEPT_TAILORED = "Accept this tailored version";
 const CONTINUE_ANYWAY = "Continue anyway";
 const START_ENRICH = "Start an enrichment session";
 
-export function useRunController() {
+type PromptRole =
+  | "iteration_accept"
+  | "iteration_continue"
+  | "enrich_offer"
+  | "approval_choice"
+  | "approval_reason"
+  | "approval_feedback"
+  | "enrich_answer"
+  | "enrich_choice"
+  | "enrich_edit"
+  | null;
+
+export function useRunController(taskId: string | null) {
+  const task = useTaskStore((s) => (taskId ? s.tasks[taskId] : null));
+  const taskStore = useTaskStore();
   const session = useRunSession();
+
   const sessionRef = useRef(session);
   sessionRef.current = session;
 
-  // Last open prompt's role — needed to route the reply into the
-  // right action bucket (recordApproved / recordRejected / etc.).
-  // Tracked separately from `pendingPrompt` so the user's reply
-  // handler knows whether they were answering, e.g. a Y/N about
-  // accepting the tailored version vs. accepting a single proposal.
-  const promptRoleRef = useRef<
-    | "iteration_accept"
-    | "iteration_continue"
-    | "enrich_offer"
-    | "approval_choice"
-    | "approval_reason"
-    | "approval_feedback"
-    | "enrich_answer"
-    | "enrich_choice"
-    | "enrich_edit"
-    | null
-  >(null);
+  // How many events of `task.events` we've already pushed into the
+  // session store. Replay slice = events[lastProcessed:].
+  const lastProcessedRef = useRef(0);
 
-  const handleMessage = useCallback((msg: ServerMessage) => {
-    const s = sessionRef.current;
-    switch (msg.type) {
-      case "node_event":
-        s.pushNodeEvent({
-          node: msg.node,
-          phase: msg.phase,
-          timestamp: msg.timestamp,
-          data: msg.data,
-        });
-        return;
-      case "status_start":
-        s.pushStatusStart(msg.message, msg.at);
-        return;
-      case "status_end":
-        s.pushStatusEnd(msg.at);
-        return;
-      case "render_iteration_header":
-        s.pushIteration({
-          iteration: msg.iteration,
-          maxIter: msg.max_iter,
-          score: msg.score,
-          at: Date.now(),
-        });
-        return;
-      case "render_proposal":
-        s.setProposal(msg.proposal, msg.index, msg.total);
-        return;
-      case "render_question":
-        s.setQuestion(msg.question, msg.index, msg.total);
-        return;
-      case "render_polished":
-        s.setPolished(msg.polished);
-        return;
-      case "notice":
-      case "panel":
-        // Panels and notices land in the activity feed but don't gate
-        // the UI. Phase 4 may surface enrichment intro panels in
-        // their own slot — for now they're just informational.
-        return;
-      case "confirm":
-        // Discriminate by message text — see comment at top of file.
-        if (msg.message.includes(ACCEPT_TAILORED)) {
-          promptRoleRef.current = "iteration_accept";
-          s.setPhase("iteration_confirm");
-        } else if (msg.message.includes(CONTINUE_ANYWAY)) {
-          promptRoleRef.current = "iteration_continue";
-          s.setPhase("iteration_confirm");
-        } else {
-          promptRoleRef.current = "iteration_accept";
-        }
-        s.setPending({ ...msg, kind: "confirm" });
-        return;
-      case "choose":
-        if (msg.choices.includes("y") && msg.choices.includes("n")) {
-          if (msg.message.includes(START_ENRICH)) {
-            promptRoleRef.current = "enrich_offer";
-            s.setPhase("iteration_confirm");
-          } else {
-            // Phase-1 / approval-flow choose calls (Y/N/F/Q).
-            promptRoleRef.current = "approval_choice";
-          }
-        } else if (msg.choices.includes("a") && msg.choices.includes("e")) {
-          // a/e/r/s/q from enrich_session.
-          promptRoleRef.current = "enrich_choice";
-        } else if (msg.choices.includes("y") && msg.choices.includes("f")) {
-          promptRoleRef.current = "approval_choice";
-        } else {
-          promptRoleRef.current = "approval_choice";
-        }
-        s.setPending({ ...msg, kind: "choose" });
-        return;
-      case "text":
-        if (msg.message.includes("Why not")) {
-          promptRoleRef.current = "approval_reason";
-        } else if (msg.message.includes("What should change")) {
-          promptRoleRef.current = "approval_feedback";
-          s.setPhase("fixing");
-        } else if (msg.message.includes("Your wording")) {
-          promptRoleRef.current = "enrich_edit";
-        } else {
-          // Generic text input — most likely an enrichment answer.
-          promptRoleRef.current = "enrich_answer";
-        }
-        s.setPending({ ...msg, kind: "text" });
-        return;
-      case "done":
-        s.setResult(msg.result);
-        return;
-      case "error":
-        s.setError(msg.message);
-        return;
-    }
-  }, []);
+  // Latest pending prompt's seq + role — needed to route replies back
+  // to the right action bucket on the session store.
+  const promptSeqRef = useRef<number | null>(null);
+  const promptRoleRef = useRef<PromptRole>(null);
 
-  const ws = useFlowSocket({
-    onMessage: handleMessage,
-    onClose: (ev) => {
-      const s = sessionRef.current;
-      if (s.phase !== "done" && s.phase !== "error") {
-        s.setError(`WebSocket closed (code ${ev.code}).`);
-      }
-    },
-  });
-
-  // --- public API ----------------------------------------------------------
-
-  // Send the StartMessage as soon as the socket opens. We can't send
-  // before then — the socket buffers nothing pre-OPEN.
-  const startedRef = useRef<StartParams | null>(null);
+  // When we navigate into a different task, reset the bookkeeping so
+  // we don't mistakenly skip events from the new task.
   useEffect(() => {
-    if (ws.status === "open" && startedRef.current) {
-      ws.send({ type: "start", params: startedRef.current });
-      startedRef.current = null;
-      sessionRef.current.setPhase("running");
-    }
-  }, [ws.status, ws]);
+    sessionRef.current.reset();
+    lastProcessedRef.current = 0;
+    promptSeqRef.current = null;
+    promptRoleRef.current = null;
+  }, [taskId]);
 
-  const beginRun = useCallback(
-    (params: StartParams) => {
-      startedRef.current = params;
-      sessionRef.current.reset();
-      sessionRef.current.setPhase("starting");
-      ws.connect("/api/ws/run");
-    },
-    [ws],
-  );
+  // Apply newly-appended events on every task update.
+  useEffect(() => {
+    if (!task) return;
+    const s = sessionRef.current;
+    const events = task.events;
+    for (let i = lastProcessedRef.current; i < events.length; i++) {
+      const ev = events[i] as unknown as ServerMessage;
+      dispatchEvent(ev, s, promptSeqRef, promptRoleRef);
+    }
+    lastProcessedRef.current = events.length;
+
+    // Mirror terminal task state into session phase.
+    if (task.status === "completed" && task.result) {
+      if (s.phase !== "done") s.setResult(task.result);
+    } else if (task.status === "failed") {
+      if (s.phase !== "error") s.setError(task.error || "Task failed");
+    } else if (task.status === "cancelled") {
+      if (s.phase !== "error") s.setError("Cancelled");
+    } else if (task.status === "interrupted") {
+      if (s.phase !== "error") {
+        s.setError(
+          task.error ||
+            "Sidecar restarted before this task could finish.",
+        );
+      }
+    } else if (task.status === "running" && s.phase === "idle") {
+      s.setPhase("running");
+    }
+
+    // Clear pending prompt when the task says there isn't one.
+    if (!task.pending_prompt) {
+      if (s.pendingPrompt) s.setPending(null);
+      promptSeqRef.current = null;
+      promptRoleRef.current = null;
+    }
+  }, [task]);
+
+  // --- public reply API ---------------------------------------------------
 
   const reply = useCallback(
     (value: string | boolean) => {
-      const s = sessionRef.current;
-      ws.send({ type: "reply", value });
-      s.setPending(null);
+      if (!taskId) return;
+      const seq = promptSeqRef.current;
+      if (seq == null) return;
+      taskStore.reply(taskId, seq, value);
+      sessionRef.current.setPending(null);
+      promptSeqRef.current = null;
       promptRoleRef.current = null;
     },
-    [ws],
+    [taskId, taskStore],
   );
 
-  /** Answer the "Accept this tailored version?" iteration prompt. */
   const acceptIteration = useCallback(() => reply(true), [reply]);
   const rejectIteration = useCallback(() => reply(false), [reply]);
-
-  /** Answer the "Continue anyway?" cap prompt — yes resets, no exits. */
   const continuePastCap = useCallback(() => reply(true), [reply]);
   const stopPastCap = useCallback(() => reply(false), [reply]);
 
-  /** Y/N/F/Q on a single proposal in the approval flow. */
   const acceptProposal = useCallback(() => {
     const proposal = sessionRef.current.currentProposal;
     if (proposal) sessionRef.current.recordApproved(proposal);
@@ -226,9 +139,7 @@ export function useRunController() {
   const sendRejectionReason = useCallback(
     (reason: string) => {
       const proposal = sessionRef.current.currentProposal;
-      if (proposal) {
-        sessionRef.current.recordRejected(proposal, reason);
-      }
+      if (proposal) sessionRef.current.recordRejected(proposal, reason);
       reply(reason);
     },
     [reply],
@@ -242,11 +153,9 @@ export function useRunController() {
 
   const quitApproval = useCallback(() => reply("q"), [reply]);
 
-  /** Enrichment offer panel — accept / decline. */
   const acceptEnrichOffer = useCallback(() => reply("y"), [reply]);
   const declineEnrichOffer = useCallback(() => reply("n"), [reply]);
 
-  /** Enrichment a/e/r/s/q on a polished bullet. */
   const acceptEnrich = useCallback(() => {
     const polished = sessionRef.current.currentPolished;
     if (polished) sessionRef.current.recordAcceptedEnrich(polished);
@@ -257,16 +166,18 @@ export function useRunController() {
   const skipEnrich = useCallback(() => reply("s"), [reply]);
   const quitEnrich = useCallback(() => reply("q"), [reply]);
 
-  /** Send a text answer (enrichment question / edit / quit). */
   const sendText = useCallback((text: string) => reply(text), [reply]);
 
-  return {
-    status: ws.status,
-    errorMsg: ws.errorMsg,
-    promptRole: promptRoleRef.current,
+  // Surface the attachment status so the UI can render
+  // "connecting / closed / error" affordances.
+  const attach = useTaskStore((s) =>
+    taskId ? s.attachments[taskId] : undefined,
+  );
 
-    beginRun,
-    disconnect: ws.disconnect,
+  return {
+    status: attach?.status ?? "idle",
+    errorMsg: attach?.errorMessage ?? null,
+    promptRole: promptRoleRef.current,
 
     // Iteration prompts
     acceptIteration,
@@ -293,4 +204,107 @@ export function useRunController() {
 
     sendText,
   } as const;
+}
+
+// ---------------------------------------------------------------------------
+// Event dispatch — replays a single wire event into the run-session store
+// ---------------------------------------------------------------------------
+
+function dispatchEvent(
+  msg: ServerMessage,
+  s: ReturnType<typeof useRunSession.getState>,
+  promptSeqRef: React.MutableRefObject<number | null>,
+  promptRoleRef: React.MutableRefObject<PromptRole>,
+) {
+  switch (msg.type) {
+    case "node_event":
+      // Sub-step `progress` events also flow through here — the session
+      // store doesn't distinguish them today, but the task-progress
+      // widget reads them directly off `task.events` so no mapping is
+      // needed at this layer.
+      if (msg.phase === "start" || msg.phase === "end" || msg.phase === "error") {
+        s.pushNodeEvent({
+          node: msg.node,
+          phase: msg.phase,
+          timestamp: msg.timestamp,
+          data: msg.data,
+        });
+      }
+      return;
+    case "status_start":
+      s.pushStatusStart(msg.message, msg.at);
+      return;
+    case "status_end":
+      s.pushStatusEnd(msg.at);
+      return;
+    case "render_iteration_header":
+      s.pushIteration({
+        iteration: msg.iteration,
+        maxIter: msg.max_iter,
+        score: msg.score,
+        at: Date.now(),
+      });
+      return;
+    case "render_proposal":
+      s.setProposal(msg.proposal, msg.index, msg.total);
+      return;
+    case "render_question":
+      s.setQuestion(msg.question, msg.index, msg.total);
+      return;
+    case "render_polished":
+      s.setPolished(msg.polished);
+      return;
+    case "notice":
+    case "panel":
+      return;
+    case "confirm": {
+      promptSeqRef.current = msg.prompt_seq ?? null;
+      if (msg.message.includes(ACCEPT_TAILORED)) {
+        promptRoleRef.current = "iteration_accept";
+        s.setPhase("iteration_confirm");
+      } else if (msg.message.includes(CONTINUE_ANYWAY)) {
+        promptRoleRef.current = "iteration_continue";
+        s.setPhase("iteration_confirm");
+      } else {
+        promptRoleRef.current = "iteration_accept";
+      }
+      s.setPending({ ...msg, kind: "confirm" });
+      return;
+    }
+    case "choose": {
+      promptSeqRef.current = msg.prompt_seq ?? null;
+      if (msg.choices.includes("y") && msg.choices.includes("n")) {
+        if (msg.message.includes(START_ENRICH)) {
+          promptRoleRef.current = "enrich_offer";
+          s.setPhase("iteration_confirm");
+        } else {
+          promptRoleRef.current = "approval_choice";
+        }
+      } else if (msg.choices.includes("a") && msg.choices.includes("e")) {
+        promptRoleRef.current = "enrich_choice";
+      } else {
+        promptRoleRef.current = "approval_choice";
+      }
+      s.setPending({ ...msg, kind: "choose" });
+      return;
+    }
+    case "text": {
+      promptSeqRef.current = msg.prompt_seq ?? null;
+      if (msg.message.includes("Why not")) {
+        promptRoleRef.current = "approval_reason";
+      } else if (msg.message.includes("What should change")) {
+        promptRoleRef.current = "approval_feedback";
+        s.setPhase("fixing");
+      } else if (msg.message.includes("Your wording")) {
+        promptRoleRef.current = "enrich_edit";
+      } else {
+        promptRoleRef.current = "enrich_answer";
+      }
+      s.setPending({ ...msg, kind: "text" });
+      return;
+    }
+    // task_status, snapshot — handled in the parent useEffect
+    default:
+      return;
+  }
 }

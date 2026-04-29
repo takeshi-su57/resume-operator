@@ -1,17 +1,21 @@
-"""Tests for the FastAPI + WebSocket server (Phase 1, #84).
+"""Tests for the FastAPI + WebSocket server.
 
 Covers:
 
-- Plain HTTP routes (health, settings, score, parse-resume, extract-style)
+- Plain HTTP routes (health, settings, parse-resume, extract-style)
   with the underlying graph / node / tool calls mocked so no LLM fires.
-- WebSocket session lifecycle — `/ws/run` drives an approval loop end to
-  end with a scripted client that approves the first iteration.
-- `WebSocketPrompter` unit tests for the message shapes the frontend
-  will consume.
+- Task registry CRUD + start endpoints (request validation, task_id
+  shape). Full task lifecycle (start → run → completed) is covered by
+  direct asyncio tests in `test_tasks.py` — Starlette's `TestClient`
+  doesn't reliably progress `asyncio.create_task`-spawned background
+  work between blocking sync requests, which makes end-to-end E2E
+  tests against the registry flaky.
+- `WebSocketPrompter` unit tests for the message shapes the bootstrap
+  flow consumes.
 
-The goal is not coverage of the graph itself (that's already in the other
-test files); it's coverage of the **new plumbing**: request/response
-shapes, WS protocol, prompter ↔ websocket bridging.
+The goal is not coverage of the graph itself (that's already in the
+other test files); it's coverage of the plumbing: request/response
+shapes, validation surface, prompter ↔ websocket bridging.
 """
 
 from __future__ import annotations
@@ -25,12 +29,9 @@ from fastapi.testclient import TestClient
 
 from lucky_resume.config import get_settings
 from lucky_resume.server.app import create_app
+from lucky_resume.server.tasks.registry import get_registry
 from lucky_resume.state import (
-    ATSScore,
     ResumeData,
-    ResumeMaster,
-    TailoredItem,
-    TailoredResume,
 )
 
 
@@ -39,8 +40,16 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     # Point each test at a temp .env so the settings write path doesn't
     # clobber the developer's real config. Honored by `paths.env_file_path`.
     monkeypatch.setenv("RESUME_OPERATOR_ENV_FILE", str(tmp_path / ".env"))
+    # Park task history under tmp_path so tests don't pollute the real
+    # `%APPDATA%\\lucky-resume\\tasks\\` dir, and the lifecycle scan
+    # starts each test against an empty history.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
     monkeypatch.chdir(tmp_path)
     get_settings.cache_clear()
+    # Drop any registry state leaking across tests.
+    for handle in list(get_registry().all()):
+        get_registry().drop(handle.task.id)
     return TestClient(create_app())
 
 
@@ -102,45 +111,75 @@ class TestSettings:
 
 
 # --------------------------------------------------------------------------
-# /api/score
+# /api/tasks — request validation + task_id shape
 # --------------------------------------------------------------------------
 
 
-class TestScore:
-    def test_requires_master_or_resume(self, client: TestClient) -> None:
-        resp = client.post("/api/score", json={"job": "job.txt"})
-        assert resp.status_code == 422  # pydantic validator
+class TestTaskStartEndpoints:
+    """The start endpoints are thin — they validate input and return a task_id.
 
-    def test_rejects_nonexistent_paths(self, client: TestClient) -> None:
-        resp = client.post(
-            "/api/score", json={"master": "nope.yaml", "job": "also-nope.txt"}
-        )
-        assert resp.status_code == 400
+    Full lifecycle (queued → running → completed) is exercised in
+    `test_tasks.py` against the registry directly, since `TestClient`
+    doesn't reliably progress backgrounded `asyncio.create_task`s
+    between blocking sync requests.
+    """
 
-    @patch("lucky_resume.server.routes.score.build_score_graph")
-    def test_returns_ats_score(
-        self, mock_build: MagicMock, client: TestClient, tmp_path: Path
+    def test_score_requires_master_or_resume(self, client: TestClient) -> None:
+        resp = client.post("/api/tasks/score", json={"job": "job.txt"})
+        assert resp.status_code == 422
+
+    def test_score_returns_task_id(
+        self, client: TestClient, tmp_path: Path
     ) -> None:
         master = tmp_path / "m.yaml"
-        master.write_text("name: Test\n")
+        master.write_text("name: T\n")
         job = tmp_path / "j.txt"
-        job.write_text("Backend role.")
-
-        graph = MagicMock()
-        graph.invoke.return_value = {
-            "ats_score": ATSScore(score=0.82, reasoning="looks good"),
-            "errors": [],
-        }
-        mock_build.return_value = graph
-
+        job.write_text("role")
         resp = client.post(
-            "/api/score", json={"master": str(master), "job": str(job)}
+            "/api/tasks/score", json={"master": str(master), "job": str(job)}
         )
         assert resp.status_code == 200
         body = resp.json()
-        assert body["ats_score"]["score"] == pytest.approx(0.82)
-        assert body["errors"] == []
-        graph.invoke.assert_called_once()
+        assert "task_id" in body
+        # Sortable id format: 13-digit ms timestamp + 8 hex chars.
+        assert "-" in body["task_id"]
+
+    def test_run_requires_job(self, client: TestClient) -> None:
+        resp = client.post("/api/tasks/run", json={})
+        assert resp.status_code == 422
+
+    def test_run_returns_task_id(
+        self, client: TestClient, tmp_path: Path
+    ) -> None:
+        master = tmp_path / "m.yaml"
+        master.write_text("name: T\n")
+        job = tmp_path / "j.txt"
+        job.write_text("role")
+        resp = client.post(
+            "/api/tasks/run",
+            json={"master": str(master), "job": str(job), "no_approve": True},
+        )
+        assert resp.status_code == 200
+        assert "task_id" in resp.json()
+
+    def test_list_returns_persisted_tasks(
+        self, client: TestClient, tmp_path: Path
+    ) -> None:
+        master = tmp_path / "m.yaml"
+        master.write_text("name: T\n")
+        job = tmp_path / "j.txt"
+        job.write_text("role")
+        resp = client.post(
+            "/api/tasks/score", json={"master": str(master), "job": str(job)}
+        )
+        task_id = resp.json()["task_id"]
+
+        listed = client.get("/api/tasks").json()
+        assert any(t["id"] == task_id for t in listed)
+
+    def test_get_unknown_task_404(self, client: TestClient) -> None:
+        resp = client.get("/api/tasks/nope-nope")
+        assert resp.status_code == 404
 
 
 # --------------------------------------------------------------------------
@@ -201,73 +240,6 @@ class TestExtractStyleRoute:
         assert "style" in body
 
 
-# --------------------------------------------------------------------------
-# /ws/run — end-to-end websocket happy path
-# --------------------------------------------------------------------------
-
-
-class TestRunWebsocket:
-    @patch("lucky_resume.server.routes.run.build_finalize_graph")
-    @patch("lucky_resume.server.routes.run.build_tailor_graph")
-    def test_accept_on_first_iteration(
-        self,
-        mock_tailor: MagicMock,
-        mock_finalize: MagicMock,
-        client: TestClient,
-        tmp_path: Path,
-    ) -> None:
-        """Full happy path: client sends start → server renders iteration
-        header + asks confirm → client approves → finalize runs → done."""
-        master = tmp_path / "m.yaml"
-        master.write_text("name: X\n")
-        job = tmp_path / "j.txt"
-        job.write_text("role text")
-
-        tailor_result = {
-            "ats_score": ATSScore(score=0.9, reasoning=""),
-            "tailored_resume": TailoredResume(
-                items=[TailoredItem(source_id="master:exp-1-b1", action="keep")]
-            ),
-            "master": ResumeMaster(name="X"),
-            "errors": [],
-        }
-        tailor = MagicMock()
-        tailor.invoke.return_value = tailor_result
-        mock_tailor.return_value = tailor
-
-        finalize = MagicMock()
-        finalize.invoke.return_value = {**tailor_result, "output_path": "out.pdf"}
-        mock_finalize.return_value = finalize
-
-        with client.websocket_connect("/api/ws/run") as ws:
-            ws.send_json(
-                {
-                    "type": "start",
-                    "params": {
-                        "master": str(master),
-                        "job": str(job),
-                        "no_enrich": True,
-                        "no_approve": False,
-                        "max_iter": 3,
-                    },
-                }
-            )
-            # The flow runs asynchronously — we consume server messages
-            # until we hit a `confirm`, answer yes, and then wait for done.
-            got_confirm = False
-            got_done = False
-            for _ in range(30):  # generous upper bound
-                msg = ws.receive_json()
-                if msg["type"] == "confirm":
-                    ws.send_json({"type": "reply", "value": True})
-                    got_confirm = True
-                elif msg["type"] == "done":
-                    got_done = True
-                    break
-                elif msg["type"] == "error":
-                    pytest.fail(f"server errored: {msg.get('message')}")
-            assert got_confirm, "expected at least one confirm prompt"
-            assert got_done, "expected a done message"
 
 
 # --------------------------------------------------------------------------

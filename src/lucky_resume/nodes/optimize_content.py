@@ -18,7 +18,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
 
-from lucky_resume.events import node_span
+from lucky_resume.events import emit_progress, node_span
 from lucky_resume.prompts.content_optimization import OPTIMIZE_CONTENT
 from lucky_resume.state import (
     OptimizedResume,
@@ -56,6 +56,11 @@ def _optimize_content_body(state: ResumeOptimizerState) -> dict[str, Any]:
     logger.info("optimize_content: starting")
     errors: list[str] = list(state.errors)
 
+    emit_progress(
+        "optimize_content",
+        step="build_source_index",
+        label="Building source index",
+    )
     index = build_source_index(state.master, state.facts)
 
     if not index.entries:
@@ -71,8 +76,20 @@ def _optimize_content_body(state: ResumeOptimizerState) -> dict[str, Any]:
             gap_analysis=state.gap_analysis.model_dump_json(),
         )
         logger.debug("optimize_content: LLM prompt: %s", prompt)
+        emit_progress(
+            "optimize_content",
+            step="llm_call",
+            label="Tailoring resume content",
+            sources=len(index.entries),
+        )
         parsed: TailoredResumeLLMOutput = llm.invoke(prompt)
         logger.debug("optimize_content: LLM response: %s", parsed.model_dump_json())
+        emit_progress(
+            "optimize_content",
+            step="validate_output",
+            label="Validating tailored items",
+            items=len(parsed.items),
+        )
     except ValidationError as exc:
         logger.error("optimize_content: LLM returned schema-invalid data: %s", exc)
         errors.append(f"optimize_content: LLM returned schema-invalid data: {exc}")

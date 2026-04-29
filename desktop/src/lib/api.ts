@@ -9,6 +9,8 @@
 
 import { useMutation, useQuery, type UseMutationOptions } from "@tanstack/react-query";
 
+import type { TaskSnapshot } from "./events";
+
 const SERVER_PORT = Number(import.meta.env.VITE_SERVER_PORT ?? 7421);
 const SERVER_BASE = `http://127.0.0.1:${SERVER_PORT}`;
 
@@ -241,16 +243,79 @@ export type ScoreRequest = {
   job: string;
 };
 
-export function useScore(
-  options?: UseMutationOptions<ScoreResponse, ApiError, ScoreRequest>,
-) {
-  return useMutation<ScoreResponse, ApiError, ScoreRequest>({
-    mutationFn: (payload) =>
-      request<ScoreResponse>("/api/score", {
-        method: "POST",
-        json: payload,
-      }),
-    ...options,
+// --- Tasks (Phase 2 registry) ----------------------------------------------
+
+export type RunRequest = {
+  master?: string;
+  resume?: string;
+  facts?: string;
+  job: string;
+  output?: string;
+  style?: string;
+  no_enrich?: boolean;
+  no_approve?: boolean;
+  max_iter?: number;
+};
+
+export type StartedTask = { task_id: string };
+
+export function listTasks(): Promise<TaskSnapshot[]> {
+  return request<TaskSnapshot[]>("/api/tasks");
+}
+
+export function getTask(taskId: string): Promise<TaskSnapshot> {
+  return request<TaskSnapshot>(`/api/tasks/${encodeURIComponent(taskId)}`);
+}
+
+export function deleteTask(taskId: string): Promise<{ deleted: boolean }> {
+  return request<{ deleted: boolean }>(
+    `/api/tasks/${encodeURIComponent(taskId)}`,
+    { method: "DELETE" },
+  );
+}
+
+export function cancelTask(taskId: string): Promise<{ cancelled: boolean }> {
+  return request<{ cancelled: boolean }>(
+    `/api/tasks/${encodeURIComponent(taskId)}/cancel`,
+    { method: "POST" },
+  );
+}
+
+export function startRun(payload: RunRequest): Promise<StartedTask> {
+  return request<StartedTask>("/api/tasks/run", {
+    method: "POST",
+    json: payload,
+  });
+}
+
+export function startScore(payload: ScoreRequest): Promise<StartedTask> {
+  return request<StartedTask>("/api/tasks/score", {
+    method: "POST",
+    json: payload,
+  });
+}
+
+export function replyTask(
+  taskId: string,
+  promptSeq: number,
+  value: string | boolean | number,
+): Promise<{ accepted: boolean }> {
+  return request<{ accepted: boolean }>(
+    `/api/tasks/${encodeURIComponent(taskId)}/reply`,
+    {
+      method: "POST",
+      json: { prompt_seq: promptSeq, value },
+    },
+  );
+}
+
+export function useTasks() {
+  return useQuery<TaskSnapshot[]>({
+    queryKey: ["tasks"],
+    queryFn: listTasks,
+    // Snapshot freshness is driven by the live WS attach; the list query
+    // is a fallback for the initial hydrate + after destructive ops.
+    staleTime: 2_000,
   });
 }
 
