@@ -26,10 +26,14 @@ The Run / Bootstrap / Parse / Extract-style screens land in Phases 3-5.
 
 ## Dev mode (Tauri shell)
 
+Dev binds the engine to **127.0.0.1:7422** so it can coexist with an
+installed production build (which holds 7421). The frontend's
+`.env.development` sets `VITE_SERVER_PORT=7422` to match.
+
 ```bash
-# Terminal 1 — boot the Python server (listens on 127.0.0.1:7421)
+# Terminal 1 — boot the Python server on the dev port
 cd ..
-uv run resume-operator-server
+uv run lucky-resume-server --port 7422
 
 # Terminal 2 — boot the Tauri shell
 cd desktop
@@ -38,8 +42,8 @@ pnpm tauri:dev
 ```
 
 The Tauri window opens against Vite's localhost:1420; HTTP and
-WebSocket calls hit the sidecar at 127.0.0.1:7421 (overridable via
-`VITE_SERVER_PORT`).
+WebSocket calls hit the sidecar at 127.0.0.1:7422. Override via
+`VITE_SERVER_PORT` if you need a different port.
 
 ## Dev mode (plain browser, no Tauri)
 
@@ -48,7 +52,7 @@ on the React side in a regular browser:
 
 ```bash
 # Terminal 1 — Python server (same as above)
-uv run resume-operator-server
+uv run lucky-resume-server --port 7422
 
 # Terminal 2 — Vite only, no Tauri
 cd desktop

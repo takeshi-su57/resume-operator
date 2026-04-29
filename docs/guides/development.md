@@ -75,29 +75,31 @@ uv run python -m resume_operator --help
 
 ### Server
 
+Dev binds to **127.0.0.1:7422** so it can coexist with an installed production build, which always uses 7421.
+
 ```bash
-# Boot the FastAPI + WebSocket engine on 127.0.0.1:7421
-uv run resume-operator-server
+# Boot the FastAPI + WebSocket engine on the dev port
+uv run lucky-resume-server --port 7422
 
 # Hot-reload on code changes (dev only)
-uv run resume-operator-server --reload
+uv run lucky-resume-server --port 7422 --reload
 
 # Liveness probe
-curl http://127.0.0.1:7421/health
+curl http://127.0.0.1:7422/health
 ```
 
 ### Desktop app (dev mode)
 
 ```bash
-# Terminal 1 — engine
-uv run resume-operator-server
+# Terminal 1 — engine on the dev port
+uv run lucky-resume-server --port 7422
 
 # Terminal 2 — Tauri shell
 cd desktop
 pnpm tauri:dev
 ```
 
-The Tauri window opens against Vite's `localhost:1420`; HTTP/WebSocket calls hit the engine on `127.0.0.1:7421`. Hot-reload on the React side is automatic; Rust shell rebuilds on save.
+The Tauri window opens against Vite's `localhost:1420`; HTTP/WebSocket calls hit the engine on `127.0.0.1:7422` (`desktop/.env.development` sets `VITE_SERVER_PORT=7422`). Hot-reload on the React side is automatic; Rust shell rebuilds on save.
 
 If you don't want Tauri (e.g. iterating only on screen layout), `pnpm dev` serves the React app at `localhost:1420` in a regular browser. The OS file dialog (`@tauri-apps/plugin-dialog`) silently no-ops in browser mode — type paths in instead.
 

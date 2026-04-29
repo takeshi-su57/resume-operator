@@ -126,9 +126,11 @@ uv run python -m resume_operator run \
 
 ## Quick Start — Desktop app (dev mode)
 
+Dev uses **port 7422** so it can coexist with an installed production build (which holds 7421).
+
 ```bash
-# Terminal 1 — boot the engine on 127.0.0.1:7421
-uv run resume-operator-server
+# Terminal 1 — boot the engine on the dev port
+uv run lucky-resume-server --port 7422
 
 # Terminal 2 — boot the Tauri shell
 cd desktop
@@ -136,7 +138,7 @@ pnpm install
 pnpm tauri:dev
 ```
 
-The window opens against Vite's `localhost:1420`; HTTP and WebSocket calls hit the engine on `127.0.0.1:7421`. Settings persist to `.env` in the project root.
+The window opens against Vite's `localhost:1420`; HTTP and WebSocket calls hit the engine on `127.0.0.1:7422` (`desktop/.env.development` wires `VITE_SERVER_PORT=7422`). Settings persist to `.env` in the project root.
 
 For a full walkthrough of either surface, see [How to Use](docs/guides/usage.md).
 
