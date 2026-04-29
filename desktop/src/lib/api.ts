@@ -202,4 +202,79 @@ export function useScore(
   });
 }
 
+// --- Parse Resume -----------------------------------------------------------
+
+export type ResumeData = {
+  name: string;
+  email: string;
+  phone: string;
+  summary: string;
+  skills: string[];
+  experience: unknown[];
+  education: unknown[];
+  certifications: string[];
+  raw_text: string;
+};
+
+export type ParseResumeResponse = {
+  resume: ResumeData;
+  errors: string[];
+};
+
+export function useParseResume(
+  options?: UseMutationOptions<ParseResumeResponse, ApiError, { resume: string }>,
+) {
+  return useMutation<ParseResumeResponse, ApiError, { resume: string }>({
+    mutationFn: (payload) =>
+      request<ParseResumeResponse>("/api/parse-resume", {
+        method: "POST",
+        json: payload,
+      }),
+    ...options,
+  });
+}
+
+// --- Extract Style ----------------------------------------------------------
+
+export type StyleMargins = {
+  top: number;
+  bottom: number;
+  side: number;
+};
+
+export type StyleSizing = {
+  size: number;
+};
+
+export type StyleTemplate = {
+  font_family: string;
+  margins: StyleMargins;
+  name_style: StyleSizing;
+  section: StyleSizing;
+  body: StyleSizing;
+};
+
+export type ExtractStyleRequest = {
+  source: string;
+  output?: string;
+};
+
+export type ExtractStyleResponse = {
+  style: StyleTemplate;
+  written_to: string | null;
+};
+
+export function useExtractStyle(
+  options?: UseMutationOptions<ExtractStyleResponse, ApiError, ExtractStyleRequest>,
+) {
+  return useMutation<ExtractStyleResponse, ApiError, ExtractStyleRequest>({
+    mutationFn: (payload) =>
+      request<ExtractStyleResponse>("/api/extract-style", {
+        method: "POST",
+        json: payload,
+      }),
+    ...options,
+  });
+}
+
 export { ApiError };
