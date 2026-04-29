@@ -1,5 +1,6 @@
 import {
   AlertCircle,
+  AlertTriangle,
   CheckCircle2,
   Clock,
   Gauge,
@@ -14,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import type { TaskKind, TaskSnapshot, TaskStatus } from "@/lib/events";
+import { interpretRunResult } from "@/lib/run-result";
 
 type Props = {
   task: TaskSnapshot;
@@ -31,6 +33,10 @@ type Props = {
 export function TaskCard({ task, active, onSelect, onDelete }: Props) {
   const KindIcon = task.kind === "score" ? Gauge : PlayCircle;
   const isTerminal = TERMINAL.has(task.status);
+  // A `completed` task can still have recorded issues — surface that
+  // distinction in the list so a no-PDF run doesn't look like a clean win.
+  const completedWithIssues =
+    task.status === "completed" && hasRecordedIssues(task);
   return (
     <div
       role="button"
@@ -53,7 +59,7 @@ export function TaskCard({ task, active, onSelect, onDelete }: Props) {
           <span className="truncate text-xs font-medium text-fg">
             {jobLabel(task) || `${kindLabel(task.kind)} task`}
           </span>
-          <StatusPill status={task.status} />
+          <StatusPill status={task.status} withIssues={completedWithIssues} />
         </div>
         <div className="mt-0.5 flex items-center gap-2 text-[0.6875rem] text-fg-faint">
           <Clock className="h-3 w-3" />
@@ -94,23 +100,39 @@ const TERMINAL = new Set<TaskStatus>([
   "interrupted",
 ]);
 
-function StatusPill({ status }: { status: TaskStatus }) {
+function StatusPill({
+  status,
+  withIssues,
+}: {
+  status: TaskStatus;
+  withIssues?: boolean;
+}) {
   const cfg = STATUS_CONFIG[status];
-  const Icon = cfg.icon;
+  // Recolor the `completed` pill to warn-amber when the run finished
+  // but recorded errors — same icon, distinct hue.
+  const className = withIssues
+    ? "bg-warn/15 text-warn"
+    : cfg.className;
+  const label = withIssues ? "completed*" : cfg.label;
+  const Icon = withIssues ? AlertTriangle : cfg.icon;
   return (
     <span
       className={cn(
         "inline-flex items-center gap-1 rounded px-1.5 py-0.5",
         "text-[0.625rem] font-medium uppercase tracking-wide",
-        cfg.className,
+        className,
       )}
+      title={withIssues ? "Completed with recorded issues — open the run to inspect." : undefined}
     >
-      <Icon
-        className={cn("h-3 w-3", cfg.spin && "animate-spin")}
-      />
-      {cfg.label}
+      <Icon className={cn("h-3 w-3", cfg.spin && !withIssues && "animate-spin")} />
+      {label}
     </span>
   );
+}
+
+function hasRecordedIssues(task: TaskSnapshot): boolean {
+  const status = interpretRunResult(task.result);
+  return status.hasErrors || (task.kind === "run" && !status.pdfGenerated);
 }
 
 const STATUS_CONFIG: Record<
