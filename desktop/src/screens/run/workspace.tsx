@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useRunSession } from "@/state/run-session";
 
 import { AtsSidePane } from "./ats-side-pane";
+import { EnrichPolishedPane } from "./enrich-polished-pane";
+import { EnrichQuestionPane } from "./enrich-question-pane";
 import { FixModal } from "./fix-modal";
 import { IterationConfirm } from "./iteration-confirm";
 import { NodeTimeline } from "./node-timeline";
@@ -19,25 +21,22 @@ type Props = {
 /**
  * Three-pane Run workspace orchestrator. Picks the right center-pane
  * component based on the session phase and the open prompt's role,
- * wires keyboard shortcuts, and owns the Fix / Rejection modals.
- *
- * Phase coverage in this commit:
- *   - `iteration_confirm` → IterationConfirm (Y/N gate)
- *   - `approval` → ProposalPane (3-button + Fix loop)
- *   - `done` / `error` → StatusPane
- *   - everything else → "running" placeholder driven by the timeline
- *
- * Phase 4 (#87) adds the enrichment center-pane components; this
- * file wires the slot for them today (`enrich_question` and
- * `enrich_polished` already render through StatusPane as a
- * placeholder until the Phase 4 components land).
+ * wires keyboard shortcuts, and owns the Fix / Rejection modals plus
+ * the deferred enrichment-edit reply (the `e` choose pick fires a
+ * follow-up text prompt the user fills in via the polished pane).
  */
 export function RunWorkspace({ controller, onReset }: Props) {
   const phase = useRunSession((s) => s.phase);
+  const pending = useRunSession((s) => s.pendingPrompt);
   const promptRole = controller.promptRole;
 
   const [fixOpen, setFixOpen] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
+
+  // When the user picks "Edit" on a polished bullet, we send `e` —
+  // the server then fires a `text` prompt asking for the edited
+  // wording. Stash the draft until that prompt arrives.
+  const pendingEnrichEditRef = useRef<string | null>(null);
 
   // Open the fix modal whenever the controller transitions to
   // `fixing` (server sent the "What should change?" text prompt).
@@ -46,41 +45,79 @@ export function RunWorkspace({ controller, onReset }: Props) {
     else setFixOpen(false);
   }, [phase]);
 
-  // --- Keyboard shortcuts: Enter / x / f / q on the approval pane ---------
+  // When the deferred enrich-edit text prompt arrives, send the
+  // stashed draft.
   useEffect(() => {
-    if (phase !== "approval") return;
+    if (
+      pending?.kind === "text" &&
+      promptRole === "enrich_edit" &&
+      pendingEnrichEditRef.current !== null
+    ) {
+      const draft = pendingEnrichEditRef.current;
+      pendingEnrichEditRef.current = null;
+      controller.sendText(draft);
+    }
+  }, [pending, promptRole, controller]);
+
+  // --- Keyboard shortcuts -------------------------------------------------
+  useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      const tag = document.activeElement?.tagName;
       if (
-        document.activeElement?.tagName === "INPUT" ||
-        document.activeElement?.tagName === "TEXTAREA" ||
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
         rejectOpen ||
         fixOpen
       ) {
         return;
       }
-      switch (e.key) {
-        case "Enter":
-          e.preventDefault();
-          controller.acceptProposal();
-          break;
-        case "x":
-        case "X":
-          e.preventDefault();
-          setRejectOpen(true);
-          // Tell the server we picked Reject; the modal collects the
-          // (optional) reason and sends it with `sendRejectionReason`.
-          controller.beginRejectProposal();
-          break;
-        case "f":
-        case "F":
-          e.preventDefault();
-          controller.beginFixProposal();
-          break;
-        case "q":
-        case "Q":
-          e.preventDefault();
-          controller.quitApproval();
-          break;
+      if (phase === "approval") {
+        switch (e.key) {
+          case "Enter":
+            e.preventDefault();
+            controller.acceptProposal();
+            return;
+          case "x":
+          case "X":
+            e.preventDefault();
+            setRejectOpen(true);
+            controller.beginRejectProposal();
+            return;
+          case "f":
+          case "F":
+            e.preventDefault();
+            controller.beginFixProposal();
+            return;
+          case "q":
+          case "Q":
+            e.preventDefault();
+            controller.quitApproval();
+            return;
+        }
+      }
+      if (phase === "enrich_polished") {
+        switch (e.key) {
+          case "a":
+          case "A":
+            e.preventDefault();
+            controller.acceptEnrich();
+            return;
+          case "r":
+          case "R":
+            e.preventDefault();
+            controller.rejectEnrich();
+            return;
+          case "s":
+          case "S":
+            e.preventDefault();
+            controller.skipEnrich();
+            return;
+          case "q":
+          case "Q":
+            e.preventDefault();
+            controller.quitEnrich();
+            return;
+        }
       }
     };
     window.addEventListener("keydown", handler);
@@ -91,7 +128,17 @@ export function RunWorkspace({ controller, onReset }: Props) {
     <div className="grid h-full grid-cols-[200px_1fr_260px]">
       <NodeTimeline />
       <section className="flex h-full min-w-0 flex-col bg-bg-subtle">
-        <CenterPane controller={controller} onReset={onReset} />
+        <CenterPane
+          controller={controller}
+          onReset={onReset}
+          onEnrichEditSubmit={(text) => {
+            // Send `e` to the server's choose prompt. The text prompt
+            // that follows is answered by the effect above once it
+            // arrives, using the stashed draft.
+            pendingEnrichEditRef.current = text;
+            controller.editEnrich();
+          }}
+        />
       </section>
       <AtsSidePane />
 
@@ -103,9 +150,6 @@ export function RunWorkspace({ controller, onReset }: Props) {
         }}
         onCancel={() => {
           setFixOpen(false);
-          // Server is blocking on the "What should change?" prompt.
-          // Empty submit is a no-op server-side (server keeps the
-          // current proposal on screen and re-asks Y/N/F/Q).
           controller.sendFixFeedback("");
         }}
       />
@@ -128,9 +172,11 @@ export function RunWorkspace({ controller, onReset }: Props) {
 function CenterPane({
   controller,
   onReset,
+  onEnrichEditSubmit,
 }: {
   controller: ReturnType<typeof useRunController>;
   onReset: () => void;
+  onEnrichEditSubmit: (text: string) => void;
 }) {
   const phase = useRunSession((s) => s.phase);
   const promptRole = controller.promptRole;
@@ -172,11 +218,28 @@ function CenterPane({
     );
   }
 
-  // `starting`, `running`, `fixing`, `enrich_question`, `enrich_polished`
-  // — show a quiet "watching the pipeline" placeholder. The node
-  // timeline + status spinner on the side panes carry the visual
-  // signal. Phase 4 (#87) replaces the enrich phases with their own
-  // card stack here.
+  if (phase === "enrich_question") {
+    return (
+      <EnrichQuestionPane
+        onSubmit={(text) => controller.sendText(text)}
+        onSkip={() => controller.sendText("skip")}
+        onQuit={() => controller.sendText("quit")}
+      />
+    );
+  }
+
+  if (phase === "enrich_polished") {
+    return (
+      <EnrichPolishedPane
+        onAccept={controller.acceptEnrich}
+        onEdit={onEnrichEditSubmit}
+        onReject={controller.rejectEnrich}
+        onSkip={controller.skipEnrich}
+        onQuit={controller.quitEnrich}
+      />
+    );
+  }
+
   return <PlaceholderPane phase={phase} />;
 }
 
@@ -185,10 +248,6 @@ function PlaceholderPane({ phase }: { phase: string }) {
     starting: "Connecting to engine…",
     running: "Pipeline running. Watch the timeline on the left.",
     fixing: "Send your feedback in the modal — LLM will revise.",
-    enrich_question:
-      "Enrichment interview — Phase 4 (#87) renders the question card here.",
-    enrich_polished:
-      "Enrichment polish — Phase 4 (#87) renders the accept/edit/reject card here.",
   };
   return (
     <div className="flex h-full items-center justify-center text-sm text-fg-dim text-center px-6">
