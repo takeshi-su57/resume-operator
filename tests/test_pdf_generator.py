@@ -5,7 +5,7 @@ from pathlib import Path
 import fitz
 import pytest
 
-from resume_operator.state import (
+from lucky_resume.state import (
     EducationEntry,
     ExperienceBullet,
     ExperienceEntry,
@@ -15,11 +15,11 @@ from resume_operator.state import (
     TailoredItem,
     TailoredResume,
 )
-from resume_operator.tools.pdf_generator import (
+from lucky_resume.tools.pdf_generator import (
     _sanitize_for_pdf,
     generate_pdf,
 )
-from resume_operator.tools.style import StyleTemplate, build_all_styles
+from lucky_resume.tools.style import StyleTemplate, build_all_styles
 
 
 @pytest.fixture()

@@ -1,7 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { Command } from "cmdk";
 import {
-  FileSearch,
   Gauge,
   Home,
   PlayCircle,
@@ -32,13 +31,6 @@ const COMMANDS: Cmd[] = [
     label: "Bootstrap master from PDF",
     to: "/bootstrap",
     icon: Sparkles,
-    group: "Navigate",
-  },
-  {
-    id: "parse",
-    label: "Parse a resume PDF",
-    to: "/parse",
-    icon: FileSearch,
     group: "Navigate",
   },
   {

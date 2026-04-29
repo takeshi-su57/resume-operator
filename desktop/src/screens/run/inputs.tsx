@@ -1,14 +1,15 @@
 import { PlayCircle } from "lucide-react";
 import { useState } from "react";
 
+import { BuiltinStylePicker } from "@/components/builtin-style-picker";
 import { FilePicker } from "@/components/file-picker";
+import { YamlPreviewDialog } from "@/components/yaml-preview-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 export type RunInputs = {
-  master?: string;
-  resume?: string;
+  master: string;
   facts?: string;
   job: string;
   output?: string;
@@ -25,13 +26,17 @@ type Props = {
 
 /**
  * Pre-flight inputs for the Run flow. Layout: a single centered card
- * with the three required pickers (master | resume | job) up front,
- * advanced opts collapsed into a footer row. Submit is disabled until
- * a master-or-resume + job is selected.
+ * with the required pickers (master + job) up front, advanced opts
+ * collapsed into a footer row. Submit is disabled until master + job
+ * are both selected.
+ *
+ * The legacy resume-PDF input was retired here once Bootstrap became
+ * the recommended way onto the master file. The server endpoint still
+ * accepts a `resume` field for back-compat, but no GUI surface sets
+ * it anymore.
  */
 export function RunInputs({ onSubmit, disabled }: Props) {
   const [master, setMaster] = useState("");
-  const [resume, setResume] = useState("");
   const [facts, setFacts] = useState("");
   const [job, setJob] = useState("");
   const [output, setOutput] = useState("");
@@ -40,13 +45,12 @@ export function RunInputs({ onSubmit, disabled }: Props) {
   const [noApprove, setNoApprove] = useState(false);
   const [maxIter, setMaxIter] = useState<string>("");
 
-  const canSubmit = (!!master || !!resume) && !!job && !disabled;
+  const canSubmit = !!master && !!job && !disabled;
 
   const submit = () => {
     if (!canSubmit) return;
     onSubmit({
-      master: master || undefined,
-      resume: master ? undefined : resume || undefined,
+      master,
       facts: facts || undefined,
       job,
       output: output || undefined,
@@ -63,34 +67,23 @@ export function RunInputs({ onSubmit, disabled }: Props) {
         <h1 className="text-sm font-bold text-fg">Run</h1>
         <p className="mt-1 text-xs text-fg-dim leading-relaxed">
           Full pipeline: load → score → tailor → optional enrich → optional
-          approval loop → finalize. Three required inputs; advanced flags
+          approval loop → finalize. Two required inputs; advanced flags
           mirror the CLI.
         </p>
       </header>
 
       <div className="space-y-4 panel p-4">
-        <FieldRow label="Master YAML">
-          <FilePicker
-            value={master}
-            onChange={(v) => {
-              setMaster(v);
-              if (v) setResume("");
-            }}
-            placeholder="data/master_resume.yaml"
-            filters={[{ name: "YAML", extensions: ["yaml", "yml"] }]}
-          />
-        </FieldRow>
-
-        <FieldRow label="…or Resume PDF (legacy)">
-          <FilePicker
-            value={resume}
-            onChange={(v) => {
-              setResume(v);
-              if (v) setMaster("");
-            }}
-            placeholder="resume.pdf"
-            filters={[{ name: "PDF", extensions: ["pdf"] }]}
-          />
+        <FieldRow label="Master YAML" required>
+          <div className="flex items-center gap-1.5">
+            <FilePicker
+              value={master}
+              onChange={setMaster}
+              placeholder="data/master_resume.yaml"
+              filters={[{ name: "YAML", extensions: ["yaml", "yml"] }]}
+              className="flex-1 min-w-0"
+            />
+            <YamlPreviewDialog path={master} iconOnly />
+          </div>
         </FieldRow>
 
         <FieldRow label="Job Description" required>
@@ -103,20 +96,47 @@ export function RunInputs({ onSubmit, disabled }: Props) {
         </FieldRow>
 
         <FieldRow label="Facts Bank YAML" optional>
-          <FilePicker
-            value={facts}
-            onChange={setFacts}
-            placeholder="(optional — defaults to data/facts_bank.yaml if present)"
-            filters={[{ name: "YAML", extensions: ["yaml", "yml"] }]}
-          />
+          <div className="flex items-center gap-1.5">
+            <FilePicker
+              value={facts}
+              onChange={setFacts}
+              placeholder="(optional — defaults to data/facts_bank.yaml if present)"
+              filters={[{ name: "YAML", extensions: ["yaml", "yml"] }]}
+              className="flex-1 min-w-0"
+            />
+            <YamlPreviewDialog path={facts} iconOnly />
+          </div>
         </FieldRow>
 
         <FieldRow label="Style Template" optional>
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1.5">
+              <FilePicker
+                value={style}
+                onChange={setStyle}
+                placeholder="(optional — overrides RESUME_STYLE_PATH)"
+                filters={[{ name: "YAML", extensions: ["yaml", "yml"] }]}
+                className="flex-1 min-w-0"
+              />
+              {/* Preview only fires on real filesystem paths; the
+                  builtin:* identifiers are virtual, but the backend
+                  resolves them to a real temp path so previewing them
+                  still works. */}
+              <YamlPreviewDialog path={style} iconOnly />
+            </div>
+            <BuiltinStylePicker
+              value={style}
+              onPick={(identifier) => setStyle(identifier)}
+            />
+          </div>
+        </FieldRow>
+
+        <FieldRow label="Output folder" optional>
           <FilePicker
-            value={style}
-            onChange={setStyle}
-            placeholder="(optional — overrides RESUME_STYLE_PATH)"
-            filters={[{ name: "YAML", extensions: ["yaml", "yml"] }]}
+            value={output}
+            onChange={setOutput}
+            placeholder="(default: data/applications/)"
+            mode="directory"
           />
         </FieldRow>
       </div>
@@ -126,13 +146,6 @@ export function RunInputs({ onSubmit, disabled }: Props) {
           Advanced
         </summary>
         <div className="px-4 pb-4 space-y-3">
-          <FieldRow label="Output parent" optional>
-            <Input
-              value={output}
-              onChange={(e) => setOutput(e.target.value)}
-              placeholder="(default: data/applications/)"
-            />
-          </FieldRow>
           <FieldRow label="Max approval iterations" optional>
             <Input
               type="number"

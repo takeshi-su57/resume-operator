@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from resume_operator.nodes.propose_changes import (
+from lucky_resume.nodes.propose_changes import (
     MAX_PROPOSALS_PER_ITERATION,
     ProposalLLM,
     ProposeChangesLLMOutput,
     propose_changes,
     revise_proposal,
 )
-from resume_operator.state import (
+from lucky_resume.state import (
     Proposal,
     RejectedSuggestion,
     ResumeOptimizerState,
@@ -28,7 +28,7 @@ def _make_llm(return_value: object | Exception) -> MagicMock:
 
 
 class TestProposeChanges:
-    @patch("resume_operator.nodes.propose_changes.get_structured_llm")
+    @patch("lucky_resume.nodes.propose_changes.get_structured_llm")
     def test_emits_validated_proposals(
         self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
@@ -71,7 +71,7 @@ class TestProposeChanges:
         assert proposals[1].kind == "new_fact"
         assert proposals[1].target_role_id == "exp-1"
 
-    @patch("resume_operator.nodes.propose_changes.get_structured_llm")
+    @patch("lucky_resume.nodes.propose_changes.get_structured_llm")
     def test_rejects_fabricated_grounding_source_id(
         self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
@@ -98,7 +98,7 @@ class TestProposeChanges:
             "fabricated grounding_source_id: master:exp-99-b99" in e for e in result["errors"]
         )
 
-    @patch("resume_operator.nodes.propose_changes.get_structured_llm")
+    @patch("lucky_resume.nodes.propose_changes.get_structured_llm")
     def test_trims_to_max_proposals(
         self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
@@ -115,7 +115,7 @@ class TestProposeChanges:
         result = propose_changes(sample_state)
         assert len(result["proposals"]) == MAX_PROPOSALS_PER_ITERATION
 
-    @patch("resume_operator.nodes.propose_changes.get_structured_llm")
+    @patch("lucky_resume.nodes.propose_changes.get_structured_llm")
     def test_coerces_unknown_kind(
         self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
@@ -134,7 +134,7 @@ class TestProposeChanges:
         # Falls back to the prefix-inferred kind — master:* → rewrite_master.
         assert result["proposals"][0].kind == "rewrite_master"
 
-    @patch("resume_operator.nodes.propose_changes.get_structured_llm")
+    @patch("lucky_resume.nodes.propose_changes.get_structured_llm")
     def test_new_skill_kind_preserved_text_not_overwritten(
         self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
@@ -162,7 +162,7 @@ class TestProposeChanges:
         # No anchor to the menu entry — skills don't have a pre-existing form.
         assert p.original_text == ""
 
-    @patch("resume_operator.nodes.propose_changes.get_structured_llm")
+    @patch("lucky_resume.nodes.propose_changes.get_structured_llm")
     def test_skips_empty_proposed_text(
         self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
@@ -180,7 +180,7 @@ class TestProposeChanges:
         result = propose_changes(sample_state)
         assert result["proposals"] == []
 
-    @patch("resume_operator.nodes.propose_changes.get_structured_llm")
+    @patch("lucky_resume.nodes.propose_changes.get_structured_llm")
     def test_rejection_list_flows_into_prompt(
         self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
@@ -203,7 +203,7 @@ class TestProposeChanges:
         assert "I never used K8s, only ECS" in sent_prompt
         assert "master:exp-1-b1" in sent_prompt
 
-    @patch("resume_operator.nodes.propose_changes.get_structured_llm")
+    @patch("lucky_resume.nodes.propose_changes.get_structured_llm")
     def test_handles_llm_error(
         self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
@@ -220,7 +220,7 @@ class TestProposeChanges:
 
 
 class TestReviseProposal:
-    @patch("resume_operator.nodes.propose_changes.get_structured_llm")
+    @patch("lucky_resume.nodes.propose_changes.get_structured_llm")
     def test_returns_revised_proposal(
         self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
@@ -248,7 +248,7 @@ class TestReviseProposal:
         assert "ECS" in revised.proposed_text
         assert "Kubernetes" not in revised.proposed_text
 
-    @patch("resume_operator.nodes.propose_changes.get_structured_llm")
+    @patch("lucky_resume.nodes.propose_changes.get_structured_llm")
     def test_returns_none_on_fabricated_revision(
         self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
@@ -266,7 +266,7 @@ class TestReviseProposal:
         )
         assert revise_proposal(sample_state, original, "feedback") is None
 
-    @patch("resume_operator.nodes.propose_changes.get_structured_llm")
+    @patch("lucky_resume.nodes.propose_changes.get_structured_llm")
     def test_returns_none_on_llm_error(
         self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:

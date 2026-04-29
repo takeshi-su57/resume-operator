@@ -1,9 +1,9 @@
-"""Build the resume-operator-server PyInstaller sidecar for Tauri.
+"""Build the lucky-resume-server PyInstaller sidecar for Tauri.
 
 One-shot script: runs PyInstaller, smoke-tests the produced binary
 boots cleanly, then renames + copies it into
 `desktop/src-tauri/binaries/` with Tauri's target-suffixed name
-convention (`resume-operator-server-<rust-target-triple>.exe`).
+convention (`lucky-resume-server-<rust-target-triple>.exe`).
 
 Usage:
     uv run python pyinstaller/build.py
@@ -14,7 +14,7 @@ Args:
                    port may not be reachable.
 
 Output:
-    desktop/src-tauri/binaries/resume-operator-server-x86_64-pc-windows-msvc.exe
+    desktop/src-tauri/binaries/lucky-resume-server-x86_64-pc-windows-msvc.exe
     (or the equivalent suffix for the host platform)
 """
 
@@ -31,7 +31,7 @@ from urllib.error import URLError
 from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parent.parent
-SPEC = ROOT / "pyinstaller" / "resume_operator_server.spec"
+SPEC = ROOT / "pyinstaller" / "lucky_resume_server.spec"
 BUILD_DIR = ROOT / "build"
 DIST_DIR = ROOT / "dist"
 SIDECAR_OUT = ROOT / "desktop" / "src-tauri" / "binaries"
@@ -72,7 +72,7 @@ def run_pyinstaller() -> Path:
     ]
     subprocess.run(cmd, check=True, cwd=ROOT)
     binary_name = (
-        "resume-operator-server.exe" if platform.system() == "Windows" else "resume-operator-server"
+        "lucky-resume-server.exe" if platform.system() == "Windows" else "lucky-resume-server"
     )
     out = DIST_DIR / binary_name
     if not out.exists():
@@ -161,7 +161,7 @@ def _kill_tree(proc: subprocess.Popen[bytes]) -> None:
 
 
 def install_into_tauri(binary: Path) -> Path:
-    target = SIDECAR_OUT / f"resume-operator-server-{rust_target_triple()}{binary.suffix}"
+    target = SIDECAR_OUT / f"lucky-resume-server-{rust_target_triple()}{binary.suffix}"
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(binary, target)
     print(f"[build] Installed -> {target}")

@@ -1,5 +1,5 @@
 /**
- * Localhost HTTP client for the resume-operator-server sidecar.
+ * Localhost HTTP client for the lucky-resume-server sidecar.
  *
  * The Tauri shell launches the sidecar on a fixed port (7421 by
  * default — see `src-tauri/tauri.conf.json`). All routes are
@@ -31,7 +31,7 @@ class ApiError extends Error {
   }
 }
 
-async function request<T>(
+export async function request<T>(
   path: string,
   init?: RequestInit & { json?: unknown },
 ): Promise<T> {
@@ -103,6 +103,7 @@ export type SettingsPayload = {
   ats_weight_title: number;
   ats_weight_measurable: number;
   ats_weight_tone: number;
+  env_file_path: string;
 };
 
 export type SettingsUpdate = Partial<SettingsPayload>;
@@ -178,9 +179,60 @@ export type ATSReport = {
   keyword_gaps: string[];
 };
 
+export type Link = {
+  label: string;
+  url: string;
+};
+
+export type ExperienceBullet = {
+  id: string;
+  text: string;
+};
+
+export type ExperienceEntry = {
+  id: string;
+  role: string;
+  company: string;
+  location: string;
+  start_date: string;
+  end_date: string;
+  bullets: ExperienceBullet[];
+  tech: string[];
+};
+
+export type EducationEntry = {
+  id: string;
+  degree: string;
+  school: string;
+  location: string;
+  start_date: string;
+  end_date: string;
+  details: string;
+};
+
+export type SkillGroup = {
+  category: string;
+  items: string[];
+};
+
+export type MasterView = {
+  name: string;
+  headline: string;
+  email: string;
+  phone: string;
+  location: string;
+  links: Link[];
+  summary: string;
+  experience: ExperienceEntry[];
+  education: EducationEntry[];
+  skills: string[];
+  skill_groups: SkillGroup[];
+};
+
 export type ScoreResponse = {
   ats_score: ATSReport;
   errors: string[];
+  master_view: MasterView | null;
 };
 
 export type ScoreRequest = {
@@ -195,38 +247,6 @@ export function useScore(
   return useMutation<ScoreResponse, ApiError, ScoreRequest>({
     mutationFn: (payload) =>
       request<ScoreResponse>("/api/score", {
-        method: "POST",
-        json: payload,
-      }),
-    ...options,
-  });
-}
-
-// --- Parse Resume -----------------------------------------------------------
-
-export type ResumeData = {
-  name: string;
-  email: string;
-  phone: string;
-  summary: string;
-  skills: string[];
-  experience: unknown[];
-  education: unknown[];
-  certifications: string[];
-  raw_text: string;
-};
-
-export type ParseResumeResponse = {
-  resume: ResumeData;
-  errors: string[];
-};
-
-export function useParseResume(
-  options?: UseMutationOptions<ParseResumeResponse, ApiError, { resume: string }>,
-) {
-  return useMutation<ParseResumeResponse, ApiError, { resume: string }>({
-    mutationFn: (payload) =>
-      request<ParseResumeResponse>("/api/parse-resume", {
         method: "POST",
         json: payload,
       }),
@@ -275,6 +295,69 @@ export function useExtractStyle(
       }),
     ...options,
   });
+}
+
+// --- YAML preview -----------------------------------------------------------
+
+export type YamlPreview = {
+  path: string;
+  content: unknown;
+};
+
+/**
+ * Reads + parses a YAML file via the sidecar so the GUI can render its
+ * contents in `<YamlTree>` without a Tauri filesystem permission. Only
+ * fires when `path` is non-empty (and `enabled` not turned off), so
+ * components can mount the dialog without a path locked in.
+ */
+export function useYamlFile(path: string, options?: { enabled?: boolean }) {
+  return useQuery<YamlPreview>({
+    queryKey: ["yaml", path],
+    queryFn: () =>
+      request<YamlPreview>(
+        `/api/yaml?path=${encodeURIComponent(path)}`,
+      ),
+    enabled: !!path && (options?.enabled ?? true),
+    // Cache aggressively — the user controls when to refetch via the
+    // dialog's mount/unmount cycle, and YAMLs they're previewing
+    // rarely change underneath them within a session.
+    staleTime: 60_000,
+  });
+}
+
+// --- Built-in styles --------------------------------------------------------
+
+export type BuiltinStyle = {
+  name: string;
+  label: string;
+  description: string;
+  template: StyleTemplate;
+};
+
+export type BuiltinStylesResponse = {
+  styles: BuiltinStyle[];
+};
+
+/**
+ * Read-only catalog of bundled style presets. Names like `default` /
+ * `consolas` are sent back to the run/extract endpoints as
+ * `builtin:<name>` to apply the preset without the user managing files.
+ */
+export function useBuiltinStyles() {
+  return useQuery<BuiltinStylesResponse>({
+    queryKey: ["styles", "builtin"],
+    queryFn: () => request<BuiltinStylesResponse>("/api/styles/builtin"),
+    // Bundled presets never change at runtime — once we have them, keep
+    // them indefinitely (cuts repeated round-trips on every screen
+    // mount).
+    staleTime: Infinity,
+  });
+}
+
+export const BUILTIN_PREFIX = "builtin:";
+
+export function isBuiltinIdentifier(value: string | undefined | null): boolean {
+  return !!value && value.startsWith(BUILTIN_PREFIX);
 }
 
 export { ApiError };

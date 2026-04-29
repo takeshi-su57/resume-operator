@@ -31,8 +31,7 @@ import { useRunSession } from "@/state/run-session";
  */
 
 type StartParams = {
-  master?: string;
-  resume?: string;
+  master: string;
   facts?: string;
   job: string;
   output?: string;

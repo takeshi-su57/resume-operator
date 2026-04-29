@@ -3,6 +3,8 @@ import { useState } from "react";
 
 import { AtsReport } from "@/components/ats-report";
 import { FilePicker } from "@/components/file-picker";
+import { ScoreProgress } from "@/components/score-progress";
+import { YamlPreviewDialog } from "@/components/yaml-preview-dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useScore } from "@/lib/api";
@@ -46,15 +48,19 @@ export function ScoreScreen() {
 
         <div className="space-y-2">
           <Label htmlFor="master">Master YAML</Label>
-          <FilePicker
-            value={master}
-            onChange={(v) => {
-              setMaster(v);
-              if (v) setResume("");
-            }}
-            placeholder="data/master_resume.yaml"
-            filters={[{ name: "YAML", extensions: ["yaml", "yml"] }]}
-          />
+          <div className="flex items-center gap-1.5">
+            <FilePicker
+              value={master}
+              onChange={(v) => {
+                setMaster(v);
+                if (v) setResume("");
+              }}
+              placeholder="data/master_resume.yaml"
+              filters={[{ name: "YAML", extensions: ["yaml", "yml"] }]}
+              className="flex-1 min-w-0"
+            />
+            <YamlPreviewDialog path={master} iconOnly />
+          </div>
         </div>
 
         <div className="space-y-2">
@@ -110,25 +116,26 @@ export function ScoreScreen() {
       </aside>
 
       <section className="overflow-y-auto p-6">
-        {score.data ? (
-          <AtsReport report={score.data.ats_score} />
+        {score.isPending ? (
+          // Mount with a fresh key per submit so the elapsed clock
+          // restarts; without it React Query reuses the same
+          // `score-progress` instance and the heuristic counter looks
+          // wrong on subsequent runs.
+          <ScoreProgress key={score.submittedAt} isPending />
+        ) : score.data ? (
+          <AtsReport
+            report={score.data.ats_score}
+            master={score.data.master_view}
+          />
         ) : (
-          <EmptyState pending={score.isPending} />
+          <EmptyState />
         )}
       </section>
     </div>
   );
 }
 
-function EmptyState({ pending }: { pending: boolean }) {
-  if (pending) {
-    return (
-      <div className="flex h-full items-center justify-center text-sm text-fg-dim">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        Running ATS analysis. Two LLM calls — this can take 30-60 seconds.
-      </div>
-    );
-  }
+function EmptyState() {
   return (
     <div className="flex h-full flex-col items-center justify-center text-sm text-fg-faint">
       <p>Pick a master YAML and a job description to score.</p>

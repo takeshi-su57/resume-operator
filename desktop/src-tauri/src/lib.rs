@@ -1,12 +1,12 @@
-// Tauri shell for resume-operator.
+// Tauri shell for LuckyResume.
 //
 // Phase 6 (#89) of the desktop GUI roadmap wires the PyInstaller-bundled
 // Python server as a sidecar binary the shell launches at startup and
 // terminates on window close.
 //
-// In dev mode, the developer keeps running `uv run resume-operator-server`
+// In dev mode, the developer keeps running `uv run lucky-resume-server`
 // in a separate terminal — Tauri only spawns the sidecar when bundled
-// (i.e. when the binary lives at `binaries/resume-operator-server-*.exe`).
+// (i.e. when the binary lives at `binaries/lucky-resume-server-*.exe`).
 // The `feature = "bundled-sidecar"` gate flips on for production builds
 // via `tauri.conf.json`'s build script.
 
@@ -29,6 +29,7 @@ pub fn run() {
                 .build(),
         )
         .manage(SidecarState::default())
+        .invoke_handler(tauri::generate_handler![reveal_in_explorer])
         .setup(|app| {
             #[cfg(debug_assertions)]
             {
@@ -49,23 +50,23 @@ pub fn run() {
     });
 }
 
-/// Spawn the bundled `resume-operator-server` sidecar.
+/// Spawn the bundled `lucky-resume-server` sidecar.
 ///
 /// Tauri's `externalBin` resolves the binary by joining the app
 /// resource dir with the configured name. The sidecar listens on
 /// `127.0.0.1:7421` by default — matches `desktop/src/lib/api.ts`.
 ///
 /// In a dev build (`cargo tauri dev`), the binary may not exist —
-/// the user keeps running `uv run resume-operator-server` in a
+/// the user keeps running `uv run lucky-resume-server` in a
 /// separate terminal. Failing to spawn is logged and tolerated.
 fn spawn_sidecar(app_handle: &tauri::AppHandle) {
     let shell = app_handle.shell();
-    let cmd = match shell.sidecar("resume-operator-server") {
+    let cmd = match shell.sidecar("lucky-resume-server") {
         Ok(c) => c,
         Err(err) => {
             log::warn!(
                 "sidecar binary not found ({err}); assuming dev mode \
-                 (`uv run resume-operator-server` runs separately)."
+                 (`uv run lucky-resume-server` runs separately)."
             );
             return;
         }
@@ -94,5 +95,39 @@ fn terminate_sidecar(app_handle: &tauri::AppHandle) {
                 log::warn!("sidecar kill failed: {err}");
             }
         }
+    }
+}
+
+/// Open the OS file manager at `path` and select the file when possible.
+///
+/// Windows uses `explorer.exe /select,<path>` to pre-highlight the file.
+/// Other platforms fall back to opening the parent directory because
+/// `tauri-plugin-shell::open` doesn't expose a cross-platform reveal-in-
+/// folder primitive — opening the parent is the closest equivalent and
+/// matches what the Run page already does for tailored PDFs.
+#[tauri::command]
+fn reveal_in_explorer(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = app;
+        // `/select,` (with the comma) tells Explorer to highlight the
+        // file; without the comma Explorer would treat the path as a
+        // command name. Spaces in the path need no extra escaping —
+        // `Command::args` passes each argument as a separate ARGV entry.
+        std::process::Command::new("explorer")
+            .args(["/select,", &path])
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("explorer spawn failed: {e}"))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let parent = std::path::PathBuf::from(&path)
+            .parent()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|| ".".to_string());
+        app.shell()
+            .open(parent, None)
+            .map_err(|e| format!("open failed: {e}"))
     }
 }

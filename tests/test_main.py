@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from resume_operator.main import app
-from resume_operator.state import (
+from lucky_resume.main import app
+from lucky_resume.state import (
     ATSScore,
     GapAnalysis,
     OptimizedResume,
@@ -52,7 +52,7 @@ class TestParseResumeCommand:
         assert result.exit_code != 0
         assert "not a PDF" in _clean_output(result.output)
 
-    @patch("resume_operator.main.build_graph")
+    @patch("lucky_resume.main.build_graph")
     def test_successful_parse(self, mock_build: MagicMock, tmp_path: Path) -> None:
         """Successful parse displays resume data."""
         fake_pdf = tmp_path / "resume.pdf"
@@ -81,7 +81,7 @@ class TestParseResumeCommand:
         assert "Python" in result.output
         assert "1 entries" in result.output
 
-    @patch("resume_operator.main.build_graph")
+    @patch("lucky_resume.main.build_graph")
     def test_pipeline_errors(self, mock_build: MagicMock, tmp_path: Path) -> None:
         """Pipeline errors are displayed in output and exit code is 1."""
         fake_pdf = tmp_path / "resume.pdf"
@@ -115,14 +115,14 @@ class TestBootstrapCommand:
         assert result.exit_code != 0
         assert "not a PDF" in _clean_output(result.output)
 
-    @patch("resume_operator.main.build_graph")
-    @patch("resume_operator.nodes.parse_resume.parse_resume")
+    @patch("lucky_resume.main.build_graph")
+    @patch("lucky_resume.nodes.parse_resume.parse_resume")
     def test_calls_only_parse_resume_not_full_graph(
         self, mock_parse: MagicMock, mock_build: MagicMock, tmp_path: Path
     ) -> None:
         """Bootstrap must not invoke the full graph — that would burn LLM calls on
         ats_score / analyze_gaps / optimize_content the user never asked for."""
-        from resume_operator.state import (
+        from lucky_resume.state import (
             ExperienceBullet,
             ExperienceEntry,
             ResumeMaster,
@@ -195,7 +195,7 @@ class TestRunAutoEnrich:
     and TTY status for each scenario."""
 
     def _state(self, *, kept_count: int, optimization_skipped: bool = False) -> dict:
-        from resume_operator.state import TailoredItem, TailoredResume
+        from lucky_resume.state import TailoredItem, TailoredResume
 
         items = [
             TailoredItem(source_id=f"master:exp-1-b{i}", action="keep") for i in range(kept_count)
@@ -207,7 +207,7 @@ class TestRunAutoEnrich:
 
     @patch("sys.stdin.isatty", return_value=True)
     def test_offers_enrich_when_thin(self, _mock_tty: MagicMock, tmp_path: Path) -> None:
-        from resume_operator.main import _should_offer_enrich
+        from lucky_resume.main import _should_offer_enrich
 
         master = tmp_path / "m.yaml"
         master.touch()
@@ -219,7 +219,7 @@ class TestRunAutoEnrich:
 
     @patch("sys.stdin.isatty", return_value=True)
     def test_does_not_offer_when_full(self, _mock_tty: MagicMock, tmp_path: Path) -> None:
-        from resume_operator.main import _should_offer_enrich
+        from lucky_resume.main import _should_offer_enrich
 
         master = tmp_path / "m.yaml"
         master.touch()
@@ -231,7 +231,7 @@ class TestRunAutoEnrich:
 
     @patch("sys.stdin.isatty", return_value=True)
     def test_respects_no_enrich_flag(self, _mock_tty: MagicMock, tmp_path: Path) -> None:
-        from resume_operator.main import _should_offer_enrich
+        from lucky_resume.main import _should_offer_enrich
 
         master = tmp_path / "m.yaml"
         master.touch()
@@ -246,7 +246,7 @@ class TestRunAutoEnrich:
     ) -> None:
         """If ATS was high enough that optimize_content didn't run, we have no
         signal that the master is thin — skip the enrich offer."""
-        from resume_operator.main import _should_offer_enrich
+        from lucky_resume.main import _should_offer_enrich
 
         master = tmp_path / "m.yaml"
         master.touch()
@@ -256,7 +256,7 @@ class TestRunAutoEnrich:
     @patch("sys.stdin.isatty", return_value=False)
     def test_skips_when_no_tty(self, _mock_tty: MagicMock, tmp_path: Path) -> None:
         """Headless / scripted runs (CI, piped stdin) must never block on prompts."""
-        from resume_operator.main import _should_offer_enrich
+        from lucky_resume.main import _should_offer_enrich
 
         master = tmp_path / "m.yaml"
         master.touch()
@@ -268,7 +268,7 @@ class TestRunAutoEnrich:
     def test_skips_legacy_pdf_path(self, tmp_path: Path) -> None:
         """The legacy --resume PDF path doesn't surface a master object the
         enrich loop can use; skip the offer regardless of stdin/TTY."""
-        from resume_operator.main import _should_offer_enrich
+        from lucky_resume.main import _should_offer_enrich
 
         assert (
             _should_offer_enrich(self._state(kept_count=2), no_enrich=False, master_path=None)
@@ -318,8 +318,8 @@ class TestRunCommand:
         assert result.exit_code != 0
         assert "does not exist" in _clean_output(result.output)
 
-    @patch("resume_operator.main.build_finalize_graph")
-    @patch("resume_operator.main.build_tailor_graph")
+    @patch("lucky_resume.main.build_finalize_graph")
+    @patch("lucky_resume.main.build_tailor_graph")
     def test_successful_run(
         self, mock_tailor: MagicMock, mock_finalize: MagicMock, tmp_path: Path
     ) -> None:
@@ -361,8 +361,8 @@ class TestRunCommand:
         assert "data/optimized_resume.pdf" in result.output
         assert "Pipeline completed successfully" in result.output
 
-    @patch("resume_operator.main.build_finalize_graph")
-    @patch("resume_operator.main.build_tailor_graph")
+    @patch("lucky_resume.main.build_finalize_graph")
+    @patch("lucky_resume.main.build_tailor_graph")
     def test_displays_errors(
         self, mock_tailor: MagicMock, mock_finalize: MagicMock, tmp_path: Path
     ) -> None:
@@ -453,8 +453,8 @@ class TestExtractStyleCommand:
 
 
 class TestRunStyleFlag:
-    @patch("resume_operator.main.build_finalize_graph")
-    @patch("resume_operator.main.build_tailor_graph")
+    @patch("lucky_resume.main.build_finalize_graph")
+    @patch("lucky_resume.main.build_tailor_graph")
     def test_style_flag_plumbed_into_initial_state(
         self, mock_tailor: MagicMock, mock_finalize: MagicMock, tmp_path: Path
     ) -> None:
@@ -493,7 +493,7 @@ class TestRunStyleFlag:
         initial = mock_tailor_graph.invoke.call_args.args[0]
         assert initial.get("style_path") == str(style)
 
-    @patch("resume_operator.main.build_tailor_graph")
+    @patch("lucky_resume.main.build_tailor_graph")
     def test_style_flag_rejects_missing_file(self, mock_build: MagicMock, tmp_path: Path) -> None:
         master = tmp_path / "m.yaml"
         master.write_text("name: x\n", encoding="utf-8")
@@ -535,14 +535,14 @@ class TestScoreCommand:
         assert result.exit_code != 0
         assert "does not exist" in _clean_output(result.output)
 
-    @patch("resume_operator.main.build_score_graph")
+    @patch("lucky_resume.main.build_score_graph")
     def test_successful_score(self, mock_build: MagicMock, tmp_path: Path) -> None:
         fake_pdf = tmp_path / "resume.pdf"
         fake_pdf.touch()
         fake_job = tmp_path / "job.txt"
         fake_job.write_text("Backend Engineer")
 
-        from resume_operator.state import SkillCountRow
+        from lucky_resume.state import SkillCountRow
 
         mock_graph = MagicMock()
         mock_graph.invoke.return_value = {
@@ -571,7 +571,7 @@ class TestScoreCommand:
         assert "Python" in result.output
         assert "K8s" in result.output
 
-    @patch("resume_operator.main.build_score_graph")
+    @patch("lucky_resume.main.build_score_graph")
     def test_pipeline_errors(self, mock_build: MagicMock, tmp_path: Path) -> None:
         fake_pdf = tmp_path / "resume.pdf"
         fake_pdf.touch()

@@ -1,7 +1,7 @@
-import { open } from "@tauri-apps/plugin-dialog";
 import { FolderOpen, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/cn";
 
 export type FileFilter = {
@@ -9,21 +9,37 @@ export type FileFilter = {
   extensions: string[];
 };
 
+export type FilePickerMode = "open-file" | "save-file" | "directory";
+
 type FilePickerProps = {
   value: string;
   onChange: (path: string) => void;
   placeholder?: string;
   filters?: FileFilter[];
   className?: string;
+  mode?: FilePickerMode;
+  /** Suggested filename when mode === "save-file". */
+  defaultName?: string;
+};
+
+const TOOLTIPS: Record<FilePickerMode, string> = {
+  "open-file": "Browse...",
+  "save-file": "Save as...",
+  directory: "Choose folder...",
 };
 
 /**
- * Compact file-picker row — read-only path display with [...] button to
- * open the OS file dialog and an [x] button to clear. The Tauri shell
- * exposes the dialog via `@tauri-apps/plugin-dialog`; in Vite dev mode
- * outside Tauri, the buttons are still clickable but `open()` throws —
- * the component catches and falls back to a no-op so you can browse the
- * UI in a regular browser tab if you ever need to.
+ * Compact path-picker row — text input + [Browse] button + [x] Clear.
+ *
+ * In Tauri, [Browse] opens an OS dialog whose flavor follows `mode`:
+ * a file-open dialog ("open-file"), a save-as dialog ("save-file"), or
+ * a directory chooser ("directory"). All three flow through
+ * `@tauri-apps/plugin-dialog`. In plain-browser dev mode (`pnpm dev`,
+ * no Tauri runtime), the dialog plugin throws because
+ * `window.__TAURI_INTERNALS__` doesn't exist — we catch it and let the
+ * user type a path into the input directly. The dialog plugin module
+ * is dynamically imported so loading it never crashes the bundle when
+ * the Tauri runtime is absent.
  */
 export function FilePicker({
   value,
@@ -31,37 +47,60 @@ export function FilePicker({
   placeholder = "Select a file…",
   filters,
   className,
+  mode = "open-file",
+  defaultName,
 }: FilePickerProps) {
   const pick = async () => {
     try {
-      const selected = await open({
-        multiple: false,
-        directory: false,
-        filters,
-      });
+      const dialog = await import("@tauri-apps/plugin-dialog");
+      let selected: string | null | undefined;
+      if (mode === "save-file") {
+        selected = await dialog.save({
+          defaultPath: value || defaultName,
+          filters,
+        });
+      } else if (mode === "directory") {
+        const result = await dialog.open({ multiple: false, directory: true });
+        selected = typeof result === "string" ? result : null;
+      } else {
+        const result = await dialog.open({
+          multiple: false,
+          directory: false,
+          filters,
+        });
+        selected = typeof result === "string" ? result : null;
+      }
       if (typeof selected === "string") {
         onChange(selected);
       }
-    } catch {
-      // Tauri API not available (running in plain browser) — silently noop.
+    } catch (err) {
+      // Most common cause: not running inside Tauri (plain `pnpm dev`).
+      // Log so devtools surfaces the real reason if something else
+      // breaks; user can still type a path into the input by hand.
+      console.warn(
+        "[FilePicker] OS dialog unavailable — type the path manually instead.",
+        err,
+      );
     }
   };
   return (
     <div className={cn("flex w-full gap-1.5", className)}>
-      <div
-        className="input-base flex flex-1 items-center truncate"
+      <Input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        spellCheck={false}
+        autoCorrect="off"
+        autoCapitalize="off"
         title={value}
-      >
-        <span className={cn("truncate", !value && "text-fg-faint")}>
-          {value || placeholder}
-        </span>
-      </div>
+        className="flex-1"
+      />
       <Button
         type="button"
         size="md"
         variant="secondary"
         onClick={pick}
-        title="Browse..."
+        title={TOOLTIPS[mode]}
       >
         <FolderOpen className="h-4 w-4" />
       </Button>

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from resume_operator.tools.ats_tone_checker import (
+from lucky_resume.tools.ats_tone_checker import (
     MAX_TONE_FLAGS,
     ATSToneLLMOutput,
     _ToneFlagLLM,
@@ -22,7 +22,7 @@ def _make_llm(return_value: object | Exception) -> MagicMock:
 
 
 class TestCheckTone:
-    @patch("resume_operator.tools.ats_tone_checker.get_structured_llm")
+    @patch("lucky_resume.tools.ats_tone_checker.get_structured_llm")
     def test_promotes_flags(self, mock_get_llm: MagicMock) -> None:
         mock_get_llm.return_value = _make_llm(
             ATSToneLLMOutput(
@@ -45,7 +45,7 @@ class TestCheckTone:
         assert flags[0].phrase == "results-driven"
         assert flags[0].suggestion == "Replace with a specific outcome."
 
-    @patch("resume_operator.tools.ats_tone_checker.get_structured_llm")
+    @patch("lucky_resume.tools.ats_tone_checker.get_structured_llm")
     def test_trims_to_max(self, mock_get_llm: MagicMock) -> None:
         raw = [
             _ToneFlagLLM(phrase=f"cliche{i}", line=f"line{i}", suggestion="fix")
@@ -55,7 +55,7 @@ class TestCheckTone:
         flags = check_tone("resume text")
         assert len(flags) == MAX_TONE_FLAGS
 
-    @patch("resume_operator.tools.ats_tone_checker.get_structured_llm")
+    @patch("lucky_resume.tools.ats_tone_checker.get_structured_llm")
     def test_drops_empty_phrases(self, mock_get_llm: MagicMock) -> None:
         mock_get_llm.return_value = _make_llm(
             ATSToneLLMOutput(
@@ -70,7 +70,7 @@ class TestCheckTone:
         assert len(flags) == 1
         assert flags[0].phrase == "real-one"
 
-    @patch("resume_operator.tools.ats_tone_checker.get_structured_llm")
+    @patch("lucky_resume.tools.ats_tone_checker.get_structured_llm")
     def test_llm_failure_returns_empty(self, mock_get_llm: MagicMock) -> None:
         mock_get_llm.return_value = _make_llm(RuntimeError("API down"))
         assert check_tone("resume") == []

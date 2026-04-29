@@ -1,5 +1,6 @@
-import { CheckCircle2, FolderOpen } from "lucide-react";
+import { CheckCircle2 } from "lucide-react";
 
+import { RevealInFolderButton } from "@/components/reveal-in-folder-button";
 import { Button } from "@/components/ui/button";
 import { useRunSession } from "@/state/run-session";
 
@@ -39,7 +40,14 @@ export function StatusPane({ onReset }: { onReset: () => void }) {
             <Button variant="secondary" onClick={onReset}>
               New run
             </Button>
-            {outputPath && <OpenInFolderButton path={outputPath} />}
+            {outputPath && (
+              <RevealInFolderButton
+                path={outputPath}
+                label="Show in folder"
+                variant="secondary"
+                size="md"
+              />
+            )}
           </div>
         </div>
       </div>
@@ -67,25 +75,4 @@ export function StatusPane({ onReset }: { onReset: () => void }) {
   }
 
   return null;
-}
-
-function OpenInFolderButton({ path }: { path: string }) {
-  const openParent = async () => {
-    try {
-      const { open } = await import("@tauri-apps/plugin-shell");
-      // Open the parent directory in Explorer / Finder. Plugin-shell
-      // doesn't expose a cross-platform "reveal in folder", so we open
-      // the directory containing the PDF instead.
-      const parent = path.replace(/[/\\][^/\\]+$/, "");
-      await open(parent);
-    } catch {
-      // Outside Tauri (dev browser) — silently no-op.
-    }
-  };
-  return (
-    <Button variant="secondary" onClick={openParent}>
-      <FolderOpen className="h-4 w-4" />
-      Show in folder
-    </Button>
-  );
 }

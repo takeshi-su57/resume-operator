@@ -2,7 +2,7 @@
 
 import pytest
 
-from resume_operator.state import (
+from lucky_resume.state import (
     ATSScore,
     EducationEntry,
     ExperienceBullet,

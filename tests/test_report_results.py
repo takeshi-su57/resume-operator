@@ -5,8 +5,8 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
-from resume_operator.nodes.report_results import report_results
-from resume_operator.state import (
+from lucky_resume.nodes.report_results import report_results
+from lucky_resume.state import (
     OptimizedResume,
     ResumeOptimizerState,
     TailoredItem,
@@ -59,8 +59,8 @@ class TestReportResults:
         diff_file = tmp_path / "data" / "diff.md"
 
         with (
-            patch("resume_operator.nodes.report_results.RESULTS_PATH", results_file),
-            patch("resume_operator.nodes.report_results.DIFF_PATH", diff_file),
+            patch("lucky_resume.nodes.report_results.RESULTS_PATH", results_file),
+            patch("lucky_resume.nodes.report_results.DIFF_PATH", diff_file),
         ):
             result = report_results(sample_state)
 
@@ -77,8 +77,8 @@ class TestReportResults:
         diff_file = tmp_path / "data" / "diff.md"
 
         with (
-            patch("resume_operator.nodes.report_results.RESULTS_PATH", results_file),
-            patch("resume_operator.nodes.report_results.DIFF_PATH", diff_file),
+            patch("lucky_resume.nodes.report_results.RESULTS_PATH", results_file),
+            patch("lucky_resume.nodes.report_results.DIFF_PATH", diff_file),
         ):
             report_results(sample_state)
 
@@ -96,8 +96,8 @@ class TestReportResults:
         diff_file = tmp_path / "data" / "diff.md"
 
         with (
-            patch("resume_operator.nodes.report_results.RESULTS_PATH", results_file),
-            patch("resume_operator.nodes.report_results.DIFF_PATH", diff_file),
+            patch("lucky_resume.nodes.report_results.RESULTS_PATH", results_file),
+            patch("lucky_resume.nodes.report_results.DIFF_PATH", diff_file),
         ):
             result = report_results(sample_state)
 
@@ -117,8 +117,8 @@ class TestReportResults:
         diff_file = tmp_path / "data" / "diff.md"
 
         with (
-            patch("resume_operator.nodes.report_results.RESULTS_PATH", results_file),
-            patch("resume_operator.nodes.report_results.DIFF_PATH", diff_file),
+            patch("lucky_resume.nodes.report_results.RESULTS_PATH", results_file),
+            patch("lucky_resume.nodes.report_results.DIFF_PATH", diff_file),
         ):
             report_results(sample_state)
 
@@ -130,7 +130,7 @@ class TestReportResults:
         results_file = tmp_path / "data" / "results.json"
 
         with (
-            patch("resume_operator.nodes.report_results.RESULTS_PATH", results_file),
+            patch("lucky_resume.nodes.report_results.RESULTS_PATH", results_file),
             patch.object(Path, "open", side_effect=PermissionError("read-only")),
         ):
             result = report_results(sample_state)
@@ -147,7 +147,7 @@ class TestReportResults:
         results_file = tmp_path / "data" / "results.json"
 
         with (
-            patch("resume_operator.nodes.report_results.RESULTS_PATH", results_file),
+            patch("lucky_resume.nodes.report_results.RESULTS_PATH", results_file),
             patch.object(Path, "open", side_effect=PermissionError("read-only")),
         ):
             result = report_results(sample_state)
@@ -164,8 +164,8 @@ class TestReportResults:
         diff_file = tmp_path / "data" / "diff.md"
 
         with (
-            patch("resume_operator.nodes.report_results.RESULTS_PATH", results_file),
-            patch("resume_operator.nodes.report_results.DIFF_PATH", diff_file),
+            patch("lucky_resume.nodes.report_results.RESULTS_PATH", results_file),
+            patch("lucky_resume.nodes.report_results.DIFF_PATH", diff_file),
         ):
             result = report_results(sample_state)
 

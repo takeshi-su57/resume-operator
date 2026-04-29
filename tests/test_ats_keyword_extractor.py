@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from resume_operator.state import SkillCountRow
-from resume_operator.tools.ats_keyword_extractor import (
+from lucky_resume.state import SkillCountRow
+from lucky_resume.tools.ats_keyword_extractor import (
     MAX_HARD_SKILLS,
     MAX_SOFT_SKILLS,
     ATSKeywordsLLMOutput,
@@ -30,7 +30,7 @@ def _make_llm(return_value: object | Exception) -> MagicMock:
 
 
 class TestExtractKeywords:
-    @patch("resume_operator.tools.ats_keyword_extractor.get_structured_llm")
+    @patch("lucky_resume.tools.ats_keyword_extractor.get_structured_llm")
     def test_promotes_llm_rows_to_state_rows(self, mock_get_llm: MagicMock) -> None:
         mock_get_llm.return_value = _make_llm(
             ATSKeywordsLLMOutput(
@@ -54,7 +54,7 @@ class TestExtractKeywords:
         assert len(soft) == 1
         assert soft[0].name == "Mentoring"
 
-    @patch("resume_operator.tools.ats_keyword_extractor.get_structured_llm")
+    @patch("lucky_resume.tools.ats_keyword_extractor.get_structured_llm")
     def test_trims_to_max(self, mock_get_llm: MagicMock) -> None:
         """A LLM that drifts past the 25/15 cap still comes back under the cap."""
         hard = [
@@ -72,7 +72,7 @@ class TestExtractKeywords:
         assert len(h) == MAX_HARD_SKILLS
         assert len(s) == MAX_SOFT_SKILLS
 
-    @patch("resume_operator.tools.ats_keyword_extractor.get_structured_llm")
+    @patch("lucky_resume.tools.ats_keyword_extractor.get_structured_llm")
     def test_clamps_negative_counts(self, mock_get_llm: MagicMock) -> None:
         """A LLM that emits -1 gets clamped to 0 — negative counts are always a bug."""
         mock_get_llm.return_value = _make_llm(
@@ -83,7 +83,7 @@ class TestExtractKeywords:
         hard, _ = extract_keywords("r", "j")
         assert hard[0].resume_count == 0
 
-    @patch("resume_operator.tools.ats_keyword_extractor.get_structured_llm")
+    @patch("lucky_resume.tools.ats_keyword_extractor.get_structured_llm")
     def test_drops_empty_names(self, mock_get_llm: MagicMock) -> None:
         mock_get_llm.return_value = _make_llm(
             ATSKeywordsLLMOutput(
@@ -98,7 +98,7 @@ class TestExtractKeywords:
         assert len(hard) == 1
         assert hard[0].name == "Python"
 
-    @patch("resume_operator.tools.ats_keyword_extractor.get_structured_llm")
+    @patch("lucky_resume.tools.ats_keyword_extractor.get_structured_llm")
     def test_llm_failure_returns_empty_lists(self, mock_get_llm: MagicMock) -> None:
         mock_get_llm.return_value = _make_llm(RuntimeError("API down"))
         hard, soft = extract_keywords("r", "j")

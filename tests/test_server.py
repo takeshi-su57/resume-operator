@@ -23,9 +23,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from resume_operator.config import get_settings
-from resume_operator.server.app import create_app
-from resume_operator.state import (
+from lucky_resume.config import get_settings
+from lucky_resume.server.app import create_app
+from lucky_resume.state import (
     ATSScore,
     ResumeData,
     ResumeMaster,
@@ -37,7 +37,8 @@ from resume_operator.state import (
 @pytest.fixture
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     # Point each test at a temp .env so the settings write path doesn't
-    # clobber the developer's real config.
+    # clobber the developer's real config. Honored by `paths.env_file_path`.
+    monkeypatch.setenv("RESUME_OPERATOR_ENV_FILE", str(tmp_path / ".env"))
     monkeypatch.chdir(tmp_path)
     get_settings.cache_clear()
     return TestClient(create_app())
@@ -116,7 +117,7 @@ class TestScore:
         )
         assert resp.status_code == 400
 
-    @patch("resume_operator.server.routes.score.build_score_graph")
+    @patch("lucky_resume.server.routes.score.build_score_graph")
     def test_returns_ats_score(
         self, mock_build: MagicMock, client: TestClient, tmp_path: Path
     ) -> None:
@@ -154,7 +155,7 @@ class TestParseResumeRoute:
         resp = client.post("/api/parse-resume", json={"resume": str(f)})
         assert resp.status_code == 400
 
-    @patch("resume_operator.server.routes.parse_resume.parse_resume_node")
+    @patch("lucky_resume.server.routes.parse_resume.parse_resume_node")
     def test_returns_resume_data(
         self, mock_node: MagicMock, client: TestClient, tmp_path: Path
     ) -> None:
@@ -183,11 +184,11 @@ class TestExtractStyleRoute:
         resp = client.post("/api/extract-style", json={"source": str(f)})
         assert resp.status_code == 400
 
-    @patch("resume_operator.server.routes.extract_style.extract_style_from_docx")
+    @patch("lucky_resume.server.routes.extract_style.extract_style_from_docx")
     def test_returns_style_without_writing(
         self, mock_extract: MagicMock, client: TestClient, tmp_path: Path
     ) -> None:
-        from resume_operator.tools.style import StyleTemplate
+        from lucky_resume.tools.style import StyleTemplate
 
         src = tmp_path / "ref.docx"
         src.write_bytes(b"dummy")
@@ -206,8 +207,8 @@ class TestExtractStyleRoute:
 
 
 class TestRunWebsocket:
-    @patch("resume_operator.server.routes.run.build_finalize_graph")
-    @patch("resume_operator.server.routes.run.build_tailor_graph")
+    @patch("lucky_resume.server.routes.run.build_finalize_graph")
+    @patch("lucky_resume.server.routes.run.build_tailor_graph")
     def test_accept_on_first_iteration(
         self,
         mock_tailor: MagicMock,
@@ -290,7 +291,7 @@ class TestWebSocketPrompterMessages:
         loop = asyncio.new_event_loop()
 
         async def _run() -> bool:
-            from resume_operator.server.ws_prompter import WebSocketPrompter
+            from lucky_resume.server.ws_prompter import WebSocketPrompter
 
             p = WebSocketPrompter(FakeWS(), asyncio.get_running_loop())
             # Pre-load a reply so `_recv` doesn't block.
@@ -308,7 +309,7 @@ class TestWebSocketPrompterMessages:
     def test_render_proposal_serializes_pydantic_model(self) -> None:
         import asyncio
 
-        from resume_operator.state import Proposal
+        from lucky_resume.state import Proposal
 
         sent: list[dict[str, Any]] = []
 
@@ -319,7 +320,7 @@ class TestWebSocketPrompterMessages:
         loop = asyncio.new_event_loop()
 
         async def _run() -> None:
-            from resume_operator.server.ws_prompter import WebSocketPrompter
+            from lucky_resume.server.ws_prompter import WebSocketPrompter
 
             p = WebSocketPrompter(FakeWS(), asyncio.get_running_loop())
             proposal = Proposal(

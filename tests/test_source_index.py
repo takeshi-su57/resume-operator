@@ -7,7 +7,7 @@ are flat or categorised (#68).
 
 from __future__ import annotations
 
-from resume_operator.state import (
+from lucky_resume.state import (
     EducationEntry,
     ExperienceBullet,
     ExperienceEntry,
@@ -16,7 +16,7 @@ from resume_operator.state import (
     ResumeMaster,
     SkillGroup,
 )
-from resume_operator.tools.source_index import build_source_index
+from lucky_resume.tools.source_index import build_source_index
 
 
 def _minimal_master(**overrides: object) -> ResumeMaster:

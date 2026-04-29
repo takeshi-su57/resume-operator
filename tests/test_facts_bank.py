@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from resume_operator.tools.facts_bank import FactsBankError, load_facts
+from lucky_resume.tools.facts_bank import FactsBankError, load_facts
 
 
 class TestLoadFacts:

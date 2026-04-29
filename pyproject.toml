@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "resume-operator"
+name = "lucky-resume"
 version = "0.1.0"
-description = "Resume Optimizer AI Agent — parses, scores, and tailors resumes for specific job descriptions"
+description = "LuckyResume — local AI agent that tailors your resume to a job description"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.12"
@@ -27,6 +27,7 @@ dependencies = [
     "uvicorn[standard]>=0.32",
     "python-multipart>=0.0.18",
     "websockets>=13.0",
+    "platformdirs>=4.0",
 ]
 
 [dependency-groups]
@@ -41,11 +42,18 @@ dev = [
 ]
 
 [project.scripts]
-resume-operator = "resume_operator.main:app"
-resume-operator-server = "resume_operator.server.main:main"
+lucky-resume = "lucky_resume.main:app"
+lucky-resume-server = "lucky_resume.server.main:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/resume_operator"]
+packages = ["src/lucky_resume"]
+
+[tool.hatch.build.targets.wheel.force-include]
+# YAML data files don't get picked up by hatchling's default Python-only
+# discovery, so include them explicitly. Path is package-relative under
+# `lucky_resume.data.styles` to match `importlib.resources.files(...)`.
+"src/lucky_resume/data/styles/default.yaml" = "lucky_resume/data/styles/default.yaml"
+"src/lucky_resume/data/styles/consolas.yaml" = "lucky_resume/data/styles/consolas.yaml"
 
 [tool.ruff]
 line-length = 100
@@ -79,7 +87,7 @@ module = [
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = "resume_operator.main"
+module = "lucky_resume.main"
 disable_error_code = ["untyped-decorator"]
 
 [tool.pytest.ini_options]

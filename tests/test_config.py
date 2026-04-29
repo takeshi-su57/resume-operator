@@ -2,7 +2,7 @@
 
 from unittest.mock import patch
 
-from resume_operator.config import Settings
+from lucky_resume.config import Settings
 
 
 class TestDefaultSettings:

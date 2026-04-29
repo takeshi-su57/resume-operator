@@ -14,9 +14,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 from rich.console import Console
 
-from resume_operator.flows.approval import run_approval_loop
-from resume_operator.prompters import RichPrompter
-from resume_operator.state import (
+from lucky_resume.flows.approval import run_approval_loop
+from lucky_resume.prompters import RichPrompter
+from lucky_resume.state import (
     ATSScore,
     FactItem,
     FactsBank,
@@ -25,7 +25,7 @@ from resume_operator.state import (
     TailoredItem,
     TailoredResume,
 )
-from resume_operator.tools.facts_bank import save_facts
+from lucky_resume.tools.facts_bank import save_facts
 
 
 def _silent_prompter() -> RichPrompter:
@@ -84,9 +84,9 @@ class TestApprovalLoop:
         )
         assert final is initial_result
 
-    @patch("resume_operator.nodes.apply_approvals.apply_approvals")
-    @patch("resume_operator.tools.approval_flow.run_approval_flow")
-    @patch("resume_operator.nodes.propose_changes.propose_changes")
+    @patch("lucky_resume.nodes.apply_approvals.apply_approvals")
+    @patch("lucky_resume.tools.approval_flow.run_approval_flow")
+    @patch("lucky_resume.nodes.propose_changes.propose_changes")
     @patch("rich.prompt.Confirm.ask")
     def test_reject_then_approve_triggers_reloop(
         self,
@@ -143,7 +143,7 @@ class TestApprovalLoop:
         mock_apply.assert_called_once()
         tailor_graph.invoke.assert_called_once()
 
-    @patch("resume_operator.nodes.propose_changes.propose_changes")
+    @patch("lucky_resume.nodes.propose_changes.propose_changes")
     @patch("rich.prompt.Confirm.ask")
     def test_empty_proposals_returns_best_seen(
         self,
@@ -169,9 +169,9 @@ class TestApprovalLoop:
         assert final is initial_result  # best is the initial, since it's the only one seen
         tailor_graph.invoke.assert_not_called()
 
-    @patch("resume_operator.nodes.apply_approvals.apply_approvals")
-    @patch("resume_operator.tools.approval_flow.run_approval_flow")
-    @patch("resume_operator.nodes.propose_changes.propose_changes")
+    @patch("lucky_resume.nodes.apply_approvals.apply_approvals")
+    @patch("lucky_resume.tools.approval_flow.run_approval_flow")
+    @patch("lucky_resume.nodes.propose_changes.propose_changes")
     @patch("rich.prompt.Confirm.ask")
     def test_quit_early_returns_best_seen(
         self,
@@ -208,9 +208,9 @@ class TestApprovalLoop:
         assert final is initial_result
         mock_apply.assert_not_called()  # quit_early means we don't persist anything
 
-    @patch("resume_operator.nodes.apply_approvals.apply_approvals")
-    @patch("resume_operator.tools.approval_flow.run_approval_flow")
-    @patch("resume_operator.nodes.propose_changes.propose_changes")
+    @patch("lucky_resume.nodes.apply_approvals.apply_approvals")
+    @patch("lucky_resume.tools.approval_flow.run_approval_flow")
+    @patch("lucky_resume.nodes.propose_changes.propose_changes")
     @patch("rich.prompt.Confirm.ask")
     def test_iteration_cap_with_decline_returns_best(
         self,
@@ -242,9 +242,9 @@ class TestApprovalLoop:
         # propose runs.
         mock_propose.assert_not_called()
 
-    @patch("resume_operator.nodes.apply_approvals.apply_approvals")
-    @patch("resume_operator.tools.approval_flow.run_approval_flow")
-    @patch("resume_operator.nodes.propose_changes.propose_changes")
+    @patch("lucky_resume.nodes.apply_approvals.apply_approvals")
+    @patch("lucky_resume.tools.approval_flow.run_approval_flow")
+    @patch("lucky_resume.nodes.propose_changes.propose_changes")
     @patch("rich.prompt.Confirm.ask")
     def test_best_so_far_preserved_across_iterations(
         self,
@@ -307,8 +307,8 @@ class TestApprovalLoopIntegration:
     def test_overrides_hide_master_in_source_index(self, tmp_path: Path) -> None:
         """Sanity: when apply_approvals writes a fact with an override, the
         next `build_source_index` call drops the shadowed master entry."""
-        from resume_operator.state import ExperienceBullet, ExperienceEntry, ResumeMaster
-        from resume_operator.tools.source_index import build_source_index
+        from lucky_resume.state import ExperienceBullet, ExperienceEntry, ResumeMaster
+        from lucky_resume.tools.source_index import build_source_index
 
         master = ResumeMaster(
             name="x",

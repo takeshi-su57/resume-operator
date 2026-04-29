@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "resume-operator",
+  "productName": "LuckyResume",
   "version": "0.1.0",
   "identifier": "security.klyro.resume-operator",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "resume-operator",
+        "title": "LuckyResume",
         "width": 1280,
         "height": 800,
         "minWidth": 960,
@@ -37,13 +37,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": ["binaries/resume-operator-server"],
+    "externalBin": ["binaries/lucky-resume-server"],
     "windows": {
       "certificateThumbprint": null,
       "digestAlgorithm": "sha256",
       "timestampUrl": ""
     },
-    "shortDescription": "Resume Optimizer AI Agent — desktop app",
-    "longDescription": "Tailor your resume to any job description with multi-dimensional ATS scoring, gap analysis, and an iterative LLM-driven approval loop."
+    "shortDescription": "LuckyResume — local AI agent that tailors your resume to a job description.",
+    "longDescription": "LuckyResume tailors your resume to any job description with multi-dimensional ATS scoring, gap analysis, and an iterative LLM-driven approval loop."
   }
 }

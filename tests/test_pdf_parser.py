@@ -7,7 +7,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.pdfgen import canvas
 
-from resume_operator.tools.pdf_parser import extract_text
+from lucky_resume.tools.pdf_parser import extract_text
 
 
 def _create_text_pdf(path: Path, pages: list[str]) -> None:

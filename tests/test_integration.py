@@ -8,15 +8,15 @@ All external I/O (LLM calls, PDF parsing, PDF generation, file writes) is mocked
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from resume_operator.graph import build_graph
-from resume_operator.nodes.analyze_gaps import GapAnalysisLLMOutput
-from resume_operator.nodes.optimize_content import TailoredItemLLM, TailoredResumeLLMOutput
-from resume_operator.nodes.parse_resume import (
+from lucky_resume.graph import build_graph
+from lucky_resume.nodes.analyze_gaps import GapAnalysisLLMOutput
+from lucky_resume.nodes.optimize_content import TailoredItemLLM, TailoredResumeLLMOutput
+from lucky_resume.nodes.parse_resume import (
     ResumeEducationLLM,
     ResumeExperienceLLM,
     ResumeLLMOutput,
 )
-from resume_operator.state import SkillCountRow
+from lucky_resume.state import SkillCountRow
 
 PARSED_RESUME = ResumeLLMOutput(
     name="Jane Smith",
@@ -82,13 +82,13 @@ def _make_mock_pdf_path(path_str: str = "data/optimized_resume.pdf") -> MagicMoc
 
 
 class TestFullPipeline:
-    @patch("resume_operator.nodes.generate_pdf.create_pdf")
-    @patch("resume_operator.nodes.optimize_content.get_structured_llm")
-    @patch("resume_operator.nodes.analyze_gaps.get_structured_llm")
-    @patch("resume_operator.nodes.ats_score.check_tone")
-    @patch("resume_operator.nodes.ats_score.extract_keywords")
-    @patch("resume_operator.nodes.parse_resume.get_structured_llm")
-    @patch("resume_operator.nodes.parse_resume.extract_text")
+    @patch("lucky_resume.nodes.generate_pdf.create_pdf")
+    @patch("lucky_resume.nodes.optimize_content.get_structured_llm")
+    @patch("lucky_resume.nodes.analyze_gaps.get_structured_llm")
+    @patch("lucky_resume.nodes.ats_score.check_tone")
+    @patch("lucky_resume.nodes.ats_score.extract_keywords")
+    @patch("lucky_resume.nodes.parse_resume.get_structured_llm")
+    @patch("lucky_resume.nodes.parse_resume.extract_text")
     def test_full_pipeline_happy_path(
         self,
         mock_extract: MagicMock,
@@ -109,7 +109,7 @@ class TestFullPipeline:
         mock_create_pdf.return_value = _make_mock_pdf_path("output/resume.pdf")
 
         results_file = tmp_path / "data" / "results.json"
-        with patch("resume_operator.nodes.report_results.RESULTS_PATH", results_file):
+        with patch("lucky_resume.nodes.report_results.RESULTS_PATH", results_file):
             graph = build_graph()
             result = graph.invoke(
                 {
@@ -145,13 +145,13 @@ class TestFullPipeline:
         mock_extract.assert_called_once()
         mock_create_pdf.assert_called_once()
 
-    @patch("resume_operator.nodes.generate_pdf.create_pdf")
-    @patch("resume_operator.nodes.optimize_content.get_structured_llm")
-    @patch("resume_operator.nodes.analyze_gaps.get_structured_llm")
-    @patch("resume_operator.nodes.ats_score.check_tone")
-    @patch("resume_operator.nodes.ats_score.extract_keywords")
-    @patch("resume_operator.nodes.parse_resume.get_structured_llm")
-    @patch("resume_operator.nodes.parse_resume.extract_text")
+    @patch("lucky_resume.nodes.generate_pdf.create_pdf")
+    @patch("lucky_resume.nodes.optimize_content.get_structured_llm")
+    @patch("lucky_resume.nodes.analyze_gaps.get_structured_llm")
+    @patch("lucky_resume.nodes.ats_score.check_tone")
+    @patch("lucky_resume.nodes.ats_score.extract_keywords")
+    @patch("lucky_resume.nodes.parse_resume.get_structured_llm")
+    @patch("lucky_resume.nodes.parse_resume.extract_text")
     def test_pipeline_continues_on_llm_pass_failure(
         self,
         mock_extract: MagicMock,
@@ -177,7 +177,7 @@ class TestFullPipeline:
         mock_create_pdf.return_value = _make_mock_pdf_path()
 
         results_file = tmp_path / "data" / "results.json"
-        with patch("resume_operator.nodes.report_results.RESULTS_PATH", results_file):
+        with patch("lucky_resume.nodes.report_results.RESULTS_PATH", results_file):
             graph = build_graph()
             result = graph.invoke(
                 {

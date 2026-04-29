@@ -71,11 +71,27 @@ export default {
       },
       animation: {
         "fade-in": "fade-in 200ms ease-out",
+        // One-shot scale pop when a timeline step transitions
+        // pending/running → done. Subtle (1 → 1.18 → 1) so it reads
+        // as a "tick!" cue without yanking the eye around.
+        "step-complete": "step-complete 320ms cubic-bezier(0.34, 1.56, 0.64, 1)",
+        // Used by the score progression heuristic — slow gradient
+        // sweep across the active step so it feels alive.
+        shimmer: "shimmer 1.6s linear infinite",
       },
       keyframes: {
         "fade-in": {
           from: { opacity: "0" },
           to: { opacity: "1" },
+        },
+        "step-complete": {
+          "0%": { transform: "scale(1)" },
+          "50%": { transform: "scale(1.18)" },
+          "100%": { transform: "scale(1)" },
+        },
+        shimmer: {
+          "0%": { backgroundPosition: "-200% 0" },
+          "100%": { backgroundPosition: "200% 0" },
         },
       },
     },

@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from resume_operator.tools.style import (
+from lucky_resume.tools.style import (
     ColorPalette,
     Margins,
     StyleTemplate,
@@ -120,7 +120,7 @@ class TestFontResolution:
         """Unknown family with no TTF in input/fonts/ should fall back to
         Helvetica and log a warning."""
         # Isolate the module-level cache + point input/fonts/ to empty tmp dir.
-        import resume_operator.tools.style as style_module
+        import lucky_resume.tools.style as style_module
 
         with (
             patch.dict(style_module._RESOLVED_FONTS, {}, clear=True),
@@ -131,7 +131,7 @@ class TestFontResolution:
 
     def test_warn_once_cache(self, tmp_path: Path) -> None:
         """Same unresolved family is only warned about once per process."""
-        import resume_operator.tools.style as style_module
+        import lucky_resume.tools.style as style_module
 
         with (
             patch.dict(style_module._RESOLVED_FONTS, {}, clear=True),

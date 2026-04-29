@@ -14,9 +14,9 @@ from unittest.mock import MagicMock, patch
 
 from langgraph.graph.state import CompiledStateGraph
 
-from resume_operator.graph import _route_after_ats_score, build_graph
-from resume_operator.nodes.parse_resume import ResumeLLMOutput
-from resume_operator.state import (
+from lucky_resume.graph import _route_after_ats_score, build_graph
+from lucky_resume.nodes.parse_resume import ResumeLLMOutput
+from lucky_resume.state import (
     ATSReport,
     ContactCheck,
     ResumeOptimizerState,
@@ -72,14 +72,14 @@ class TestGraphAssembly:
         node_names = [n for n in graph.get_graph().nodes if not n.startswith("__")]
         assert sorted(node_names) == sorted(EXPECTED_NODES)
 
-    @patch("resume_operator.nodes.report_results.RESULTS_PATH")
-    @patch("resume_operator.nodes.generate_pdf.create_pdf")
-    @patch("resume_operator.nodes.optimize_content.get_structured_llm")
-    @patch("resume_operator.nodes.analyze_gaps.get_structured_llm")
-    @patch("resume_operator.nodes.ats_score.check_tone")
-    @patch("resume_operator.nodes.ats_score.extract_keywords")
-    @patch("resume_operator.nodes.parse_resume.get_structured_llm")
-    @patch("resume_operator.nodes.parse_resume.extract_text")
+    @patch("lucky_resume.nodes.report_results.RESULTS_PATH")
+    @patch("lucky_resume.nodes.generate_pdf.create_pdf")
+    @patch("lucky_resume.nodes.optimize_content.get_structured_llm")
+    @patch("lucky_resume.nodes.analyze_gaps.get_structured_llm")
+    @patch("lucky_resume.nodes.ats_score.check_tone")
+    @patch("lucky_resume.nodes.ats_score.extract_keywords")
+    @patch("lucky_resume.nodes.parse_resume.get_structured_llm")
+    @patch("lucky_resume.nodes.parse_resume.extract_text")
     def test_graph_runs_parse_resume(
         self,
         mock_extract: MagicMock,
@@ -105,7 +105,7 @@ class TestGraphAssembly:
         mock_optimize_llm.side_effect = RuntimeError("not under test")
 
         results_file = tmp_path / "data" / "results.json"
-        with patch("resume_operator.nodes.report_results.RESULTS_PATH", results_file):
+        with patch("lucky_resume.nodes.report_results.RESULTS_PATH", results_file):
             graph = build_graph()
 
             result = graph.invoke(
@@ -130,14 +130,14 @@ class TestGraphAssembly:
 
 
 class TestConditionalRouting:
-    @patch("resume_operator.graph.get_settings")
+    @patch("lucky_resume.graph.get_settings")
     def test_high_score_with_healthy_subdimensions_skips(self, mock_settings: MagicMock) -> None:
         """Composite ≥ threshold AND hard coverage + structural healthy → skip."""
         mock_settings.return_value.ats_skip_threshold = 0.9
         state = ResumeOptimizerState(ats_score=_healthy_report(0.95))
         assert _route_after_ats_score(state) == "skip"
 
-    @patch("resume_operator.graph.get_settings")
+    @patch("lucky_resume.graph.get_settings")
     def test_threshold_score_with_healthy_subdimensions_skips(
         self, mock_settings: MagicMock
     ) -> None:
@@ -146,13 +146,13 @@ class TestConditionalRouting:
         state = ResumeOptimizerState(ats_score=_healthy_report(0.9))
         assert _route_after_ats_score(state) == "skip"
 
-    @patch("resume_operator.graph.get_settings")
+    @patch("lucky_resume.graph.get_settings")
     def test_low_score_routes_to_optimize(self, mock_settings: MagicMock) -> None:
         mock_settings.return_value.ats_skip_threshold = 0.9
         state = ResumeOptimizerState(ats_score=ATSReport(score=0.72))
         assert _route_after_ats_score(state) == "optimize"
 
-    @patch("resume_operator.graph.get_settings")
+    @patch("lucky_resume.graph.get_settings")
     def test_high_score_but_no_llm_data_still_optimizes(self, mock_settings: MagicMock) -> None:
         """#81 regression guard: pre-#81, a garbage LLM returning score=1.0
         with empty keyword data falsely skipped optimization. The hardened
@@ -163,7 +163,7 @@ class TestConditionalRouting:
         )
         assert _route_after_ats_score(state) == "optimize"
 
-    @patch("resume_operator.graph.get_settings")
+    @patch("lucky_resume.graph.get_settings")
     def test_high_score_but_low_hard_coverage_still_optimizes(
         self, mock_settings: MagicMock
     ) -> None:
@@ -185,7 +185,7 @@ class TestConditionalRouting:
         )
         assert _route_after_ats_score(state) == "optimize"
 
-    @patch("resume_operator.graph.get_settings")
+    @patch("lucky_resume.graph.get_settings")
     def test_zero_score_routes_to_optimize(self, mock_settings: MagicMock) -> None:
         """Default zero score routes to 'optimize'."""
         mock_settings.return_value.ats_skip_threshold = 0.9

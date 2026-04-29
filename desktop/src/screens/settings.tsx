@@ -1,6 +1,7 @@
 import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { RevealInFolderButton } from "@/components/reveal-in-folder-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +18,7 @@ import {
   type SettingsPayload,
   type SettingsUpdate,
 } from "@/lib/api";
+import { notify } from "@/state/toaster";
 
 const PROVIDERS = ["openai", "anthropic", "google", "openrouter"];
 
@@ -48,7 +50,21 @@ const ATS_WEIGHTS: { id: keyof SettingsPayload; label: string }[] = [
 export function SettingsScreen() {
   const { data, isLoading, isError, error, refetch } = useSettings();
   const update = useUpdateSettings({
-    onSuccess: () => refetch(),
+    onSuccess: () => {
+      refetch();
+      notify({
+        kind: "success",
+        title: "Settings saved",
+        description: "New values take effect on the next pipeline run.",
+      });
+    },
+    onError: (err) => {
+      notify({
+        kind: "error",
+        title: "Save failed",
+        description: err.message || "The server rejected the update.",
+      });
+    },
   });
 
   const [draft, setDraft] = useState<SettingsUpdate>({});
@@ -106,15 +122,24 @@ export function SettingsScreen() {
     // form, so the whole page scrolls vertically.
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-3xl p-6">
-        <header className="flex items-center justify-between mb-6">
-        <div>
+        <header className="flex items-center justify-between mb-6 gap-4">
+        <div className="min-w-0">
           <h1 className="text-sm font-bold text-fg">Settings</h1>
           <p className="mt-1 text-xs text-fg-dim leading-relaxed">
-            Persists to <span className="font-mono text-fg">.env</span> in the
-            project root. API keys arrive masked — type a new value to replace.
+            API keys arrive masked — type a new value to replace.
           </p>
+          <div className="mt-1 flex items-center gap-2 min-w-0">
+            <span className="text-xs text-fg-dim">Persists to</span>
+            <span
+              className="font-mono text-xs text-fg truncate"
+              title={data.env_file_path}
+            >
+              {data.env_file_path}
+            </span>
+            <RevealInFolderButton path={data.env_file_path} />
+          </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 shrink-0">
           <Button variant="ghost" disabled={!dirty} onClick={reset}>
             Reset
           </Button>

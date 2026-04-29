@@ -1,26 +1,66 @@
 import { Loader2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
+import { BuiltinStylePicker } from "@/components/builtin-style-picker";
 import { FilePicker } from "@/components/file-picker";
+import { HistoryList } from "@/components/history-list";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { YamlTree } from "@/components/yaml-tree";
 import { useExtractStyle, type StyleTemplate } from "@/lib/api";
+import { useHistoryActions } from "@/state/history";
 
 /**
  * Extract Style — wraps the CLI `extract-style` command (#72).
  * .docx in → StyleTemplate JSON shown for inspection, optionally
  * written to a chosen output YAML path.
+ *
+ * Recent extractions persist to localStorage so Bruno can revisit a
+ * previous source/output pair (or jump to either file in Explorer)
+ * across app restarts.
  */
 export function ExtractStyleScreen() {
   const [source, setSource] = useState("");
   const [output, setOutput] = useState("");
   const extract = useExtractStyle();
+  const { push: pushHistory } = useHistoryActions();
+
+  // Local preview when the user clicks a built-in chip — short-circuits
+  // the server round-trip and renders the bundled YAML directly so
+  // Bruno can inspect the shape without a .docx in hand.
+  const [builtinPreview, setBuiltinPreview] = useState<{
+    name: string;
+    template: StyleTemplate;
+  } | null>(null);
+
+  // Record the run once the server confirms it wrote the YAML. Guarded
+  // by `written_to` so dry-run inspections (no output path) don't
+  // pollute history.
+  useEffect(() => {
+    const writtenTo = extract.data?.written_to;
+    if (writtenTo && source) {
+      pushHistory("extract-style", {
+        source,
+        output: writtenTo,
+        at: Date.now(),
+      });
+    }
+    // We only want to fire when a new successful response arrives, hence
+    // depending on the response identity rather than `source`/`output`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [extract.data]);
 
   const submit = () => {
     if (!source) return;
+    setBuiltinPreview(null);
     extract.mutate({ source, output: output || undefined });
   };
+
+  const previewedTemplate = extract.data?.style ?? builtinPreview?.template;
+  const previewedWrittenTo = extract.data?.written_to ?? null;
+  const previewedTitle = builtinPreview
+    ? `Built-in: ${builtinPreview.name}`
+    : "Style Template";
 
   return (
     <div className="grid h-full grid-cols-[320px_1fr]">
@@ -48,10 +88,13 @@ export function ExtractStyleScreen() {
             Output YAML
             <span className="ml-1 text-fg-faint normal-case">(optional)</span>
           </Label>
-          <Input
+          <FilePicker
             value={output}
-            onChange={(e) => setOutput(e.target.value)}
+            onChange={setOutput}
             placeholder="(leave empty to inspect only)"
+            mode="save-file"
+            defaultName="style_template.yaml"
+            filters={[{ name: "YAML", extensions: ["yaml", "yml"] }]}
           />
         </div>
         <Button
@@ -73,14 +116,40 @@ export function ExtractStyleScreen() {
         {extract.isError && (
           <p className="text-xs text-danger">{extract.error?.message}</p>
         )}
+        <div className="space-y-1.5">
+          <Label>Compare with built-in</Label>
+          <BuiltinStylePicker
+            value={builtinPreview ? `builtin:${builtinPreview.name}` : ""}
+            onPick={(_id, style) =>
+              setBuiltinPreview({ name: style.name, template: style.template })
+            }
+          />
+        </div>
+        <HistoryList
+          page="extract-style"
+          title="Recent extractions"
+          onPick={(entry) => {
+            setSource(entry.source);
+            setOutput(entry.output);
+          }}
+        />
       </aside>
 
       <section className="overflow-y-auto p-6">
-        {extract.data ? (
-          <StylePreview
-            template={extract.data.style}
-            writtenTo={extract.data.written_to}
-          />
+        {previewedTemplate ? (
+          <div className="space-y-4 max-w-2xl">
+            <StylePreview
+              template={previewedTemplate}
+              writtenTo={previewedWrittenTo}
+              title={previewedTitle}
+            />
+            <section className="panel p-4 space-y-2">
+              <h3 className="text-xs uppercase tracking-wider text-fg-muted">
+                Full template
+              </h3>
+              <YamlTree data={previewedTemplate} defaultOpenDepth={1} />
+            </section>
+          </div>
         ) : (
           <EmptyState pending={extract.isPending} />
         )}
@@ -92,12 +161,14 @@ export function ExtractStyleScreen() {
 function StylePreview({
   template,
   writtenTo,
+  title = "Style Template",
 }: {
   template: StyleTemplate;
   writtenTo: string | null;
+  title?: string;
 }) {
   return (
-    <div className="space-y-4 max-w-2xl">
+    <>
       {writtenTo && (
         <p className="rounded-md border border-success/40 bg-success/10 px-3 py-2 text-xs text-success font-mono break-all">
           Wrote {writtenTo}
@@ -105,7 +176,7 @@ function StylePreview({
       )}
       <section className="panel p-4 space-y-3">
         <h3 className="text-xs uppercase tracking-wider text-fg-muted">
-          Style Template
+          {title}
         </h3>
         <Field label="Font family" value={template.font_family} />
         <Field label="Margins (top)" value={`${template.margins.top}in`} />
@@ -115,7 +186,7 @@ function StylePreview({
         <Field label="Section size" value={`${template.section.size}pt`} />
         <Field label="Body size" value={`${template.body.size}pt`} />
       </section>
-    </div>
+    </>
   );
 }
 

@@ -1,6 +1,5 @@
 import {
   ChevronRight,
-  FileSearch,
   Gauge,
   PlayCircle,
   Settings,
@@ -9,6 +8,7 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
+import { Logo } from "@/components/logo";
 import { useHealth } from "@/lib/api";
 import { cn } from "@/lib/cn";
 
@@ -44,13 +44,6 @@ const TILES: Tile[] = [
     icon: Sparkles,
   },
   {
-    to: "/parse",
-    label: "Parse PDF",
-    description:
-      "Inspect what the LLM extracts from a resume PDF — fields, counts, raw text.",
-    icon: FileSearch,
-  },
-  {
     to: "/style",
     label: "Extract style",
     description:
@@ -83,7 +76,10 @@ export function HomeScreen() {
     // and gets clipped by main).
     <div className="h-full overflow-y-auto p-8 max-w-5xl mx-auto w-full">
       <header className="mb-8">
-        <h1 className="text-lg font-bold text-fg">resume-operator</h1>
+        <div className="flex items-center gap-3">
+          <Logo className="text-accent" size={32} />
+          <h1 className="text-2xl font-bold text-fg">LuckyResume</h1>
+        </div>
         <p className="mt-1 text-sm text-fg-dim">
           Local AI agent that tailors your resume to any job description.
         </p>
@@ -106,7 +102,7 @@ export function HomeScreen() {
               Engine online · {health!.llm_provider} / {health!.llm_model}
             </span>
           ) : (
-            <span>Engine offline — start the sidecar with <span className="font-mono">uv run resume-operator-server</span></span>
+            <span>Engine offline — start the sidecar with <span className="font-mono">uv run lucky-resume-server</span></span>
           )}
         </div>
       </header>

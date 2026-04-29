@@ -4,8 +4,8 @@ from unittest.mock import MagicMock, patch
 
 from pydantic import ValidationError
 
-from resume_operator.nodes.analyze_gaps import GapAnalysisLLMOutput, analyze_gaps
-from resume_operator.state import ResumeOptimizerState
+from lucky_resume.nodes.analyze_gaps import GapAnalysisLLMOutput, analyze_gaps
+from lucky_resume.state import ResumeOptimizerState
 
 
 def _make_llm(return_value: object | Exception) -> MagicMock:
@@ -18,7 +18,7 @@ def _make_llm(return_value: object | Exception) -> MagicMock:
 
 
 class TestAnalyzeGaps:
-    @patch("resume_operator.nodes.analyze_gaps.get_structured_llm")
+    @patch("lucky_resume.nodes.analyze_gaps.get_structured_llm")
     def test_analyzes_gaps_successfully(
         self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
@@ -46,7 +46,7 @@ class TestAnalyzeGaps:
             "Highlight any CI/CD exposure",
         ]
 
-    @patch("resume_operator.nodes.analyze_gaps.get_structured_llm")
+    @patch("lucky_resume.nodes.analyze_gaps.get_structured_llm")
     def test_handles_llm_error(
         self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
@@ -58,7 +58,7 @@ class TestAnalyzeGaps:
         assert any("LLM call failed" in e for e in result["errors"])
         assert "gap_analysis" not in result
 
-    @patch("resume_operator.nodes.analyze_gaps.get_structured_llm")
+    @patch("lucky_resume.nodes.analyze_gaps.get_structured_llm")
     def test_handles_schema_validation_error(
         self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
@@ -75,7 +75,7 @@ class TestAnalyzeGaps:
         assert any("schema-invalid" in e for e in result["errors"])
         assert "gap_analysis" not in result
 
-    @patch("resume_operator.nodes.analyze_gaps.get_structured_llm")
+    @patch("lucky_resume.nodes.analyze_gaps.get_structured_llm")
     def test_handles_empty_fields(
         self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
@@ -88,7 +88,7 @@ class TestAnalyzeGaps:
         assert result["gap_analysis"].strengths == []
         assert result["gap_analysis"].suggestions == []
 
-    @patch("resume_operator.nodes.analyze_gaps.get_structured_llm")
+    @patch("lucky_resume.nodes.analyze_gaps.get_structured_llm")
     def test_returns_only_changed_fields(
         self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:

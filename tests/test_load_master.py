@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from resume_operator.nodes.load_master import load_master_node
-from resume_operator.state import ResumeOptimizerState
+from lucky_resume.nodes.load_master import load_master_node
+from lucky_resume.state import ResumeOptimizerState
 
 EXAMPLE_YAML = """\
 name: Jane Smith

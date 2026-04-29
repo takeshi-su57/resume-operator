@@ -4,12 +4,12 @@ from unittest.mock import MagicMock, patch
 
 from pydantic import ValidationError
 
-from resume_operator.nodes.optimize_content import (
+from lucky_resume.nodes.optimize_content import (
     TailoredItemLLM,
     TailoredResumeLLMOutput,
     optimize_content,
 )
-from resume_operator.state import ResumeOptimizerState
+from lucky_resume.state import ResumeOptimizerState
 
 VALID_OUTPUT = TailoredResumeLLMOutput(
     tailored_headline="Senior Backend Engineer · 8+ years · Python, AWS",
@@ -41,7 +41,7 @@ def _make_llm(return_value: object | Exception) -> MagicMock:
 
 
 class TestOptimizeContent:
-    @patch("resume_operator.nodes.optimize_content.get_structured_llm")
+    @patch("lucky_resume.nodes.optimize_content.get_structured_llm")
     def test_builds_tailored_resume(
         self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
@@ -66,7 +66,7 @@ class TestOptimizeContent:
         assert result["optimized_resume"].sections["experience"].startswith("- ")
         assert result["optimized_resume"].sections["skills"] == "Python"
 
-    @patch("resume_operator.nodes.optimize_content.get_structured_llm")
+    @patch("lucky_resume.nodes.optimize_content.get_structured_llm")
     def test_rejects_fabricated_source_id(
         self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
@@ -85,7 +85,7 @@ class TestOptimizeContent:
         assert len(result["tailored_resume"].items) == 1
         assert any("fabricated source_id" in e for e in result["errors"])
 
-    @patch("resume_operator.nodes.optimize_content.get_structured_llm")
+    @patch("lucky_resume.nodes.optimize_content.get_structured_llm")
     def test_coerces_unknown_action(
         self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
@@ -100,7 +100,7 @@ class TestOptimizeContent:
         # Unknown action coerced to the safe default "keep".
         assert result["tailored_resume"].items[0].action == "keep"
 
-    @patch("resume_operator.nodes.optimize_content.get_structured_llm")
+    @patch("lucky_resume.nodes.optimize_content.get_structured_llm")
     def test_handles_llm_error(
         self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
@@ -112,7 +112,7 @@ class TestOptimizeContent:
         assert any("LLM call failed" in e for e in result["errors"])
         assert "tailored_resume" not in result
 
-    @patch("resume_operator.nodes.optimize_content.get_structured_llm")
+    @patch("lucky_resume.nodes.optimize_content.get_structured_llm")
     def test_handles_schema_validation_error(
         self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
@@ -138,14 +138,14 @@ class TestOptimizeContent:
 class TestKeptRatioGuard:
     """Post-run guard surfaces a warning when the tailor keeps too much (#76)."""
 
-    @patch("resume_operator.nodes.optimize_content.get_structured_llm")
+    @patch("lucky_resume.nodes.optimize_content.get_structured_llm")
     def test_warns_when_kept_ratio_above_threshold(
         self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
         """sample_master has a known number of source_index entries. If the
         LLM 'keeps' almost all of them, the guard should surface a warning
         note in tailored.notes marked with the ⚠ glyph."""
-        from resume_operator.tools.source_index import build_source_index
+        from lucky_resume.tools.source_index import build_source_index
 
         # Count how many items the source_index produces for sample_master.
         # We'll keep all of them to force a 100% ratio.
@@ -175,12 +175,12 @@ class TestKeptRatioGuard:
         # Strategy note preserved alongside the warning.
         assert any("LLM-provided" in n for n in tailored.notes)
 
-    @patch("resume_operator.nodes.optimize_content.get_structured_llm")
+    @patch("lucky_resume.nodes.optimize_content.get_structured_llm")
     def test_no_warning_when_kept_ratio_below_threshold(
         self, mock_get_llm: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
         """A well-tailored run that drops most items shouldn't get the warning."""
-        from resume_operator.tools.source_index import build_source_index
+        from lucky_resume.tools.source_index import build_source_index
 
         index = build_source_index(sample_state.master, sample_state.facts)
         all_sids = [sid for sid in index.entries if not sid.startswith("master:summary")]

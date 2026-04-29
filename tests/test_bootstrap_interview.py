@@ -6,19 +6,19 @@ from unittest.mock import MagicMock, patch
 
 from rich.console import Console
 
-from resume_operator.prompters import RichPrompter
-from resume_operator.state import (
+from lucky_resume.prompters import RichPrompter
+from lucky_resume.state import (
     ExperienceBullet,
     ExperienceEntry,
     Link,
     ResumeMaster,
     SkillGroup,
 )
-from resume_operator.tools.bootstrap_interview import (
+from lucky_resume.tools.bootstrap_interview import (
     run_interview,
     should_run_interview,
 )
-from resume_operator.tools.skill_grouping import (
+from lucky_resume.tools.skill_grouping import (
     SkillGroupLLM,
     SkillGroupsLLMOutput,
     propose_groups,
@@ -191,7 +191,7 @@ class TestRunInterviewPerRoleTech:
 
 
 class TestRunInterviewSkillGrouping:
-    @patch("resume_operator.tools.bootstrap_interview.propose_groups")
+    @patch("lucky_resume.tools.bootstrap_interview.propose_groups")
     def test_asks_confirmation_and_writes_groups_on_accept(self, mock_propose: MagicMock) -> None:
         master = _minimal_master()
         mock_propose.return_value = [
@@ -220,7 +220,7 @@ class TestRunInterviewSkillGrouping:
         categories = {g.category for g in master.skill_groups}
         assert categories == {"Languages", "Cloud", "Data"}
 
-    @patch("resume_operator.tools.bootstrap_interview.propose_groups")
+    @patch("lucky_resume.tools.bootstrap_interview.propose_groups")
     def test_reject_leaves_groups_empty(self, mock_propose: MagicMock) -> None:
         master = _minimal_master()
         mock_propose.return_value = [
@@ -238,7 +238,7 @@ class TestRunInterviewSkillGrouping:
 
         assert master.skill_groups == []
 
-    @patch("resume_operator.tools.bootstrap_interview.propose_groups")
+    @patch("lucky_resume.tools.bootstrap_interview.propose_groups")
     def test_skipped_when_user_says_no(self, mock_propose: MagicMock) -> None:
         master = _minimal_master()
 
@@ -251,7 +251,7 @@ class TestRunInterviewSkillGrouping:
         mock_propose.assert_not_called()
         assert master.skill_groups == []
 
-    @patch("resume_operator.tools.bootstrap_interview.propose_groups")
+    @patch("lucky_resume.tools.bootstrap_interview.propose_groups")
     def test_skipped_when_skills_too_few(self, mock_propose: MagicMock) -> None:
         master = _minimal_master()
         master.skills = ["Python"]  # below the min-3 threshold
@@ -267,7 +267,7 @@ class TestRunInterviewSkillGrouping:
 
 
 class TestProposeGroups:
-    @patch("resume_operator.tools.skill_grouping.get_structured_llm")
+    @patch("lucky_resume.tools.skill_grouping.get_structured_llm")
     def test_returns_groups_with_canonicalised_casing(self, mock_get_llm: MagicMock) -> None:
         # Input skills have "Python" (capital P); LLM returns "python" (lower).
         # propose_groups should match case-insensitively and keep the original.
@@ -285,7 +285,7 @@ class TestProposeGroups:
         # Python preserved with its original casing.
         assert "Python" in result[0].items
 
-    @patch("resume_operator.tools.skill_grouping.get_structured_llm")
+    @patch("lucky_resume.tools.skill_grouping.get_structured_llm")
     def test_rejects_fabricated_skills(self, mock_get_llm: MagicMock) -> None:
         """If the LLM invents a skill that wasn't in the input, it gets filtered out."""
         mock_get_llm.return_value = _make_llm(
@@ -301,7 +301,7 @@ class TestProposeGroups:
         assert "Python" in items
         assert "Kotlin" not in items
 
-    @patch("resume_operator.tools.skill_grouping.get_structured_llm")
+    @patch("lucky_resume.tools.skill_grouping.get_structured_llm")
     def test_collects_ungrouped_skills_into_other(self, mock_get_llm: MagicMock) -> None:
         """Input skills the LLM didn't place end up in an 'Other' group so they're
         not silently lost."""
@@ -315,7 +315,7 @@ class TestProposeGroups:
         assert "Other" in categories
         assert sorted(categories["Other"]) == ["AWS", "Docker"]
 
-    @patch("resume_operator.tools.skill_grouping.get_structured_llm")
+    @patch("lucky_resume.tools.skill_grouping.get_structured_llm")
     def test_returns_empty_on_llm_failure(self, mock_get_llm: MagicMock) -> None:
         mock_get_llm.return_value = _make_llm(RuntimeError("API down"))
         assert propose_groups(["Python"]) == []

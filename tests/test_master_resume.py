@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from resume_operator.state import ResumeData, ResumeMaster
-from resume_operator.tools.master_resume import (
+from lucky_resume.state import ResumeData, ResumeMaster
+from lucky_resume.tools.master_resume import (
     MasterResumeError,
     load_master,
     resume_data_to_master,

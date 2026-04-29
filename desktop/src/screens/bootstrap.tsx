@@ -2,11 +2,13 @@ import { Loader2, PlayCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { FilePicker } from "@/components/file-picker";
+import { HistoryList } from "@/components/history-list";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { ServerMessage } from "@/lib/events";
 import { useFlowSocket } from "@/lib/ws";
+import { useHistoryActions } from "@/state/history";
 
 type Phase = "idle" | "starting" | "running" | "prompt" | "done" | "error";
 
@@ -44,53 +46,80 @@ export function BootstrapScreen() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
 
-  const handleMessage = useCallback((msg: ServerMessage) => {
-    switch (msg.type) {
-      case "status_start":
-      case "status_end":
-        setLogs((prev) => [...prev, { kind: msg.type, message: msg.type === "status_start" ? msg.message : "", at: msg.at }]);
-        return;
-      case "panel":
-      case "notice":
-        setLogs((prev) => [
-          ...prev,
-          {
-            kind: msg.type,
+  const { push: pushHistory } = useHistoryActions();
+
+  const handleMessage = useCallback(
+    (msg: ServerMessage) => {
+      switch (msg.type) {
+        case "status_start":
+        case "status_end":
+          setLogs((prev) => [
+            ...prev,
+            {
+              kind: msg.type,
+              message: msg.type === "status_start" ? msg.message : "",
+              at: msg.at,
+            },
+          ]);
+          return;
+        case "panel":
+        case "notice":
+          setLogs((prev) => [
+            ...prev,
+            {
+              kind: msg.type,
+              message: msg.message,
+              title: msg.type === "panel" ? msg.title : undefined,
+              at: Date.now(),
+            },
+          ]);
+          return;
+        case "confirm":
+          setPending({ kind: "confirm", message: msg.message, default: msg.default });
+          setPhase("prompt");
+          return;
+        case "choose":
+          setPending({
+            kind: "choose",
             message: msg.message,
-            title: msg.type === "panel" ? msg.title : undefined,
-            at: Date.now(),
-          },
-        ]);
-        return;
-      case "confirm":
-        setPending({ kind: "confirm", message: msg.message, default: msg.default });
-        setPhase("prompt");
-        return;
-      case "choose":
-        setPending({
-          kind: "choose",
-          message: msg.message,
-          choices: msg.choices,
-          default: msg.default,
-        });
-        setPhase("prompt");
-        return;
-      case "text":
-        setPending({ kind: "text", message: msg.message, default: msg.default });
-        setPhase("prompt");
-        return;
-      case "done":
-        setResult(msg.result);
-        setPhase("done");
-        return;
-      case "error":
-        setErrorMsg(msg.message);
-        setPhase("error");
-        return;
-      default:
-        return;
-    }
-  }, []);
+            choices: msg.choices,
+            default: msg.default,
+          });
+          setPhase("prompt");
+          return;
+        case "text":
+          setPending({ kind: "text", message: msg.message, default: msg.default });
+          setPhase("prompt");
+          return;
+        case "done": {
+          setResult(msg.result);
+          setPhase("done");
+          // Persist a history row so Bruno can revisit either path
+          // later. The server normalizes `output_path` from the params,
+          // so we trust whatever it echoes back over `resume` UI state.
+          const outputPath =
+            typeof msg.result?.output_path === "string"
+              ? msg.result.output_path
+              : output;
+          if (resume && outputPath) {
+            pushHistory("bootstrap", {
+              source: resume,
+              output: outputPath,
+              at: Date.now(),
+            });
+          }
+          return;
+        }
+        case "error":
+          setErrorMsg(msg.message);
+          setPhase("error");
+          return;
+        default:
+          return;
+      }
+    },
+    [resume, output, pushHistory],
+  );
 
   const ws = useFlowSocket({ onMessage: handleMessage });
 
@@ -156,10 +185,13 @@ export function BootstrapScreen() {
         </div>
         <div className="space-y-2">
           <Label>Output YAML</Label>
-          <Input
+          <FilePicker
             value={output}
-            onChange={(e) => setOutput(e.target.value)}
+            onChange={setOutput}
             placeholder="data/master_resume.yaml"
+            mode="save-file"
+            defaultName="master_resume.yaml"
+            filters={[{ name: "YAML", extensions: ["yaml", "yml"] }]}
           />
         </div>
         <label className="flex cursor-pointer items-start gap-2 text-sm text-fg">
@@ -198,6 +230,14 @@ export function BootstrapScreen() {
             </>
           )}
         </Button>
+        <HistoryList
+          page="bootstrap"
+          title="Recent bootstraps"
+          onPick={(entry) => {
+            setResume(entry.source);
+            setOutput(entry.output);
+          }}
+        />
       </aside>
 
       <section className="flex flex-col overflow-hidden">

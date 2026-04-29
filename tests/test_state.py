@@ -1,6 +1,6 @@
 """Tests for state models."""
 
-from resume_operator.state import (
+from lucky_resume.state import (
     ATSScore,
     GapAnalysis,
     JobDescription,

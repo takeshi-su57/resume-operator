@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from docx import Document
 
-from resume_operator.tools.style_from_docx import (
+from lucky_resume.tools.style_from_docx import (
     StyleExtractionError,
     extract_style_from_docx,
 )

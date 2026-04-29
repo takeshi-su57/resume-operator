@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from resume_operator.tools.output_dir import resolve_output_dir
+from lucky_resume.tools.output_dir import resolve_output_dir
 
 
 class TestResolveOutputDir:

@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import pytest
 
-from resume_operator.state import (
+from lucky_resume.state import (
     EducationEntry,
     ExperienceEntry,
     ResumeMaster,
 )
-from resume_operator.tools.ats_checks import (
+from lucky_resume.tools.ats_checks import (
     WORD_COUNT_MAX,
     WORD_COUNT_MIN,
     check_contact,

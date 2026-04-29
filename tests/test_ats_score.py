@@ -8,8 +8,8 @@ presence, composite-score clamping, empty-resume short-circuit.
 
 from unittest.mock import MagicMock, patch
 
-from resume_operator.nodes.ats_score import ats_score, ats_score_tailored
-from resume_operator.state import (
+from lucky_resume.nodes.ats_score import ats_score, ats_score_tailored
+from lucky_resume.state import (
     ATSReport,
     ResumeOptimizerState,
     SkillCountRow,
@@ -33,8 +33,8 @@ def _patch_llm_passes(
 
 
 class TestAtsScoreOrchestrator:
-    @patch("resume_operator.nodes.ats_score.check_tone")
-    @patch("resume_operator.nodes.ats_score.extract_keywords")
+    @patch("lucky_resume.nodes.ats_score.check_tone")
+    @patch("lucky_resume.nodes.ats_score.extract_keywords")
     def test_assembles_full_report(
         self,
         mock_extract: MagicMock,
@@ -67,8 +67,8 @@ class TestAtsScoreOrchestrator:
         # Composite is a float in [0, 1].
         assert 0.0 <= report.score <= 1.0
 
-    @patch("resume_operator.nodes.ats_score.check_tone")
-    @patch("resume_operator.nodes.ats_score.extract_keywords")
+    @patch("lucky_resume.nodes.ats_score.check_tone")
+    @patch("lucky_resume.nodes.ats_score.extract_keywords")
     def test_composite_with_perfect_inputs_is_near_one(
         self,
         mock_extract: MagicMock,
@@ -96,8 +96,8 @@ class TestAtsScoreOrchestrator:
         # measurable_results contributing sub-optimally.
         assert report.score >= 0.6
 
-    @patch("resume_operator.nodes.ats_score.check_tone")
-    @patch("resume_operator.nodes.ats_score.extract_keywords")
+    @patch("lucky_resume.nodes.ats_score.check_tone")
+    @patch("lucky_resume.nodes.ats_score.extract_keywords")
     def test_llm_failure_still_produces_report(
         self,
         mock_extract: MagicMock,
@@ -127,8 +127,8 @@ class TestAtsScoreOrchestrator:
 
 
 class TestAtsScoreTailored:
-    @patch("resume_operator.nodes.ats_score.check_tone")
-    @patch("resume_operator.nodes.ats_score.extract_keywords")
+    @patch("lucky_resume.nodes.ats_score.check_tone")
+    @patch("lucky_resume.nodes.ats_score.extract_keywords")
     def test_scores_tailored_text_not_master(
         self,
         mock_extract: MagicMock,

@@ -1,0 +1,92 @@
+"""Render a human-readable `diff.md` from a `TailoredResume`.
+
+Five sections:
+  - Warnings: notes flagged by the tailor / post-guards (#76)
+  - Tailored Headline / Summary: fresh JD-crafted text
+  - Strategy Notes: LLM's own explanation of what was emphasized / cut
+  - Additions: facts-bank items pulled into the output
+  - Rewordings: master items included but rephrased (shows before/after)
+  - Deletions: master items considered but dropped
+
+Notes starting with `⚠` are treated as warnings and surface at the top.
+"""
+
+from __future__ import annotations
+
+from lucky_resume.state import TailoredItem, TailoredResume
+from lucky_resume.tools.source_index import SourceIndex
+
+WARNING_MARKER = "⚠"
+
+
+def render_diff(tailored: TailoredResume, index: SourceIndex) -> str:
+    additions = [
+        i for i in tailored.items if i.action == "keep" and i.source_id.startswith("facts:")
+    ]
+    # "keep" master items aren't diff-worthy on their own — they were on the master already.
+    # "reword" items always show before/after regardless of source.
+    rewordings = [i for i in tailored.items if i.action == "reword"]
+    deletions = [i for i in tailored.items if i.action == "drop"]
+
+    warnings = [note for note in tailored.notes if note.lstrip().startswith(WARNING_MARKER)]
+    strategy_notes = [n for n in tailored.notes if not n.lstrip().startswith(WARNING_MARKER)]
+
+    lines: list[str] = ["# Tailoring Diff", ""]
+
+    if warnings:
+        lines.append("## Warnings")
+        lines.extend(f"- {w}" for w in warnings)
+        lines.append("")
+
+    if tailored.tailored_headline:
+        lines.append("## Tailored Headline (fresh, JD-crafted)")
+        lines.append(tailored.tailored_headline)
+        lines.append("")
+
+    if tailored.tailored_summary:
+        lines.append("## Tailored Summary (fresh, JD-crafted)")
+        lines.append(tailored.tailored_summary)
+        lines.append("")
+
+    if strategy_notes:
+        lines.append("## Strategy Notes")
+        lines.extend(f"- {note}" for note in strategy_notes)
+        lines.append("")
+
+    lines.append("## Additions — items pulled from the facts bank")
+    if additions:
+        lines.extend(_render_items(additions, index, show_new=False))
+    else:
+        lines.append("_No facts-bank items pulled in._")
+    lines.append("")
+
+    lines.append("## Rewordings — master or facts items with adjusted phrasing")
+    if rewordings:
+        for item in rewordings:
+            entry = index.get(item.source_id)
+            kind = entry.kind if entry else "unknown"
+            lines.append(f"- **{item.source_id}** ({kind})")
+            lines.append(f"  - before: {item.original_text}")
+            lines.append(f"  - after:  {item.new_text}")
+    else:
+        lines.append("_No rewordings._")
+    lines.append("")
+
+    lines.append("## Deletions — master items considered but dropped")
+    if deletions:
+        lines.extend(_render_items(deletions, index, show_new=False))
+    else:
+        lines.append("_No master items dropped._")
+    lines.append("")
+
+    return "\n".join(lines)
+
+
+def _render_items(items: list[TailoredItem], index: SourceIndex, *, show_new: bool) -> list[str]:
+    lines: list[str] = []
+    for item in items:
+        entry = index.get(item.source_id)
+        kind = entry.kind if entry else "unknown"
+        text = item.new_text if show_new and item.new_text else item.original_text
+        lines.append(f"- **{item.source_id}** ({kind}) {text}")
+    return lines

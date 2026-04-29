@@ -12,9 +12,9 @@ from unittest.mock import patch
 
 from rich.console import Console
 
-from resume_operator.prompters import RichPrompter
-from resume_operator.state import Proposal, ResumeOptimizerState
-from resume_operator.tools.approval_flow import run_approval_flow
+from lucky_resume.prompters import RichPrompter
+from lucky_resume.state import Proposal, ResumeOptimizerState
+from lucky_resume.tools.approval_flow import run_approval_flow
 
 
 def _silent_prompter() -> RichPrompter:
@@ -48,7 +48,7 @@ class TestRunApprovalFlow:
     def test_kind_labels_cover_all_four_kinds(self) -> None:
         """#80: every `Proposal.kind` the LLM can emit has a human-readable label.
         If this breaks, the panel shows a raw 'new_skill' in the UI."""
-        from resume_operator.tools.approval_flow import _KIND_LABEL
+        from lucky_resume.tools.approval_flow import _KIND_LABEL
 
         for kind in ("rewrite_master", "rewrite_fact", "new_fact", "new_skill"):
             assert kind in _KIND_LABEL

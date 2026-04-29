@@ -6,8 +6,8 @@ from datetime import date
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from resume_operator.state import FactItem, FactsBank, ResumeMaster
-from resume_operator.tools.enrich import (
+from lucky_resume.state import FactItem, FactsBank, ResumeMaster
+from lucky_resume.tools.enrich import (
     AcceptedItem,
     EnrichQuestionLLM,
     EnrichQuestionsLLMOutput,
@@ -31,7 +31,7 @@ def _make_llm(return_value: object | Exception) -> MagicMock:
 
 
 class TestGenerateQuestions:
-    @patch("resume_operator.tools.enrich.get_structured_llm")
+    @patch("lucky_resume.tools.enrich.get_structured_llm")
     def test_returns_questions(self, mock_get_llm: MagicMock, sample_master: ResumeMaster) -> None:
         mock_get_llm.return_value = _make_llm(
             EnrichQuestionsLLMOutput(
@@ -59,7 +59,7 @@ class TestGenerateQuestions:
         assert "backend" in result[0].question.lower()
         assert result[1].question.startswith("Did you")
 
-    @patch("resume_operator.tools.enrich.get_structured_llm")
+    @patch("lucky_resume.tools.enrich.get_structured_llm")
     def test_caps_at_n_max(self, mock_get_llm: MagicMock, sample_master: ResumeMaster) -> None:
         mock_get_llm.return_value = _make_llm(
             EnrichQuestionsLLMOutput(
@@ -71,7 +71,7 @@ class TestGenerateQuestions:
 
         assert len(result) == 3
 
-    @patch("resume_operator.tools.enrich.get_structured_llm")
+    @patch("lucky_resume.tools.enrich.get_structured_llm")
     def test_filters_empty_questions(
         self, mock_get_llm: MagicMock, sample_master: ResumeMaster
     ) -> None:
@@ -88,7 +88,7 @@ class TestGenerateQuestions:
         result = generate_questions(sample_master, FactsBank(), "JD", n_max=5)
         assert len(result) == 1
 
-    @patch("resume_operator.tools.enrich.get_structured_llm")
+    @patch("lucky_resume.tools.enrich.get_structured_llm")
     def test_returns_empty_on_llm_error(
         self, mock_get_llm: MagicMock, sample_master: ResumeMaster
     ) -> None:
@@ -100,7 +100,7 @@ class TestGenerateQuestions:
 
 
 class TestPolishAnswer:
-    @patch("resume_operator.tools.enrich.get_structured_llm")
+    @patch("lucky_resume.tools.enrich.get_structured_llm")
     def test_returns_polished_bullet(
         self, mock_get_llm: MagicMock, sample_master: ResumeMaster
     ) -> None:
@@ -121,7 +121,7 @@ class TestPolishAnswer:
         assert result.role_id == "exp-1"
         assert "RESTful" in result.polished_text
 
-    @patch("resume_operator.tools.enrich.get_structured_llm")
+    @patch("lucky_resume.tools.enrich.get_structured_llm")
     def test_demotes_to_project_when_role_id_unknown(
         self, mock_get_llm: MagicMock, sample_master: ResumeMaster
     ) -> None:
@@ -142,7 +142,7 @@ class TestPolishAnswer:
         assert result.bucket == "project"
         assert result.role_id == ""
 
-    @patch("resume_operator.tools.enrich.get_structured_llm")
+    @patch("lucky_resume.tools.enrich.get_structured_llm")
     def test_returns_none_on_llm_error(
         self, mock_get_llm: MagicMock, sample_master: ResumeMaster
     ) -> None:
@@ -219,7 +219,7 @@ class TestCollectExistingIds:
 
 class TestAppendToFacts:
     def test_creates_file_if_missing(self, tmp_path: Path) -> None:
-        from resume_operator.tools.facts_bank import append_to_facts, load_facts
+        from lucky_resume.tools.facts_bank import append_to_facts, load_facts
 
         out = tmp_path / "facts.yaml"
         append_to_facts(
@@ -233,7 +233,7 @@ class TestAppendToFacts:
         assert loaded.projects[0].source == "enrich 2026-04-21"
 
     def test_preserves_existing_items_and_appends(self, tmp_path: Path) -> None:
-        from resume_operator.tools.facts_bank import append_to_facts, load_facts, save_facts
+        from lucky_resume.tools.facts_bank import append_to_facts, load_facts, save_facts
 
         out = tmp_path / "facts.yaml"
         initial = FactsBank(
@@ -254,7 +254,7 @@ class TestAppendToFacts:
 
     def test_id_collision_overrides(self, tmp_path: Path) -> None:
         """Same id → last write wins (caller is responsible for unique IDs)."""
-        from resume_operator.tools.facts_bank import append_to_facts, load_facts, save_facts
+        from lucky_resume.tools.facts_bank import append_to_facts, load_facts, save_facts
 
         out = tmp_path / "facts.yaml"
         save_facts(FactsBank(projects=[FactItem(id="p1", text="old text")]), out)

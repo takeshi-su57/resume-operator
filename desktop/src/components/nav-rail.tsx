@@ -1,5 +1,4 @@
 import {
-  FileSearch,
   Gauge,
   Home,
   PlayCircle,
@@ -9,6 +8,7 @@ import {
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 
+import { Logo } from "@/components/logo";
 import { cn } from "@/lib/cn";
 
 type NavItem = {
@@ -23,7 +23,6 @@ const items: NavItem[] = [
   { to: "/run", label: "Run", icon: PlayCircle },
   { to: "/score", label: "Score", icon: Gauge },
   { to: "/bootstrap", label: "Bootstrap", icon: Sparkles },
-  { to: "/parse", label: "Parse PDF", icon: FileSearch },
   { to: "/style", label: "Extract Style", icon: Wrench },
   { to: "/settings", label: "Settings", icon: SettingsIcon },
 ];
@@ -37,9 +36,10 @@ export function NavRail({ className }: { className?: string }) {
       )}
       data-no-select
     >
-      <div className="flex h-10 items-center justify-between px-3 border-b border-border">
+      <div className="flex h-10 items-center gap-2 px-3 border-b border-border">
+        <Logo className="text-accent" size={16} />
         <span className="font-mono text-xs font-bold tracking-wider text-fg">
-          resume-operator
+          LuckyResume
         </span>
       </div>
       <nav className="flex flex-col gap-0.5 p-2">

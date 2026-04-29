@@ -9,14 +9,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from resume_operator.nodes.apply_approvals import apply_approvals
-from resume_operator.state import (
+from lucky_resume.nodes.apply_approvals import apply_approvals
+from lucky_resume.state import (
     FactItem,
     FactsBank,
     Proposal,
     ResumeOptimizerState,
 )
-from resume_operator.tools.facts_bank import load_facts, save_facts
+from lucky_resume.tools.facts_bank import load_facts, save_facts
 
 
 def _state_with_facts(
@@ -248,7 +248,7 @@ class TestNewSkill:
         """Skills already on the master shouldn't get re-added to facts."""
         import tempfile
 
-        from resume_operator.state import ResumeMaster
+        from lucky_resume.state import ResumeMaster
 
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "facts.yaml"

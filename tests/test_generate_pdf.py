@@ -3,8 +3,8 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from resume_operator.nodes.generate_pdf import generate_pdf
-from resume_operator.state import ResumeOptimizerState, TailoredItem, TailoredResume
+from lucky_resume.nodes.generate_pdf import generate_pdf
+from lucky_resume.state import ResumeOptimizerState, TailoredItem, TailoredResume
 
 
 def _tailored() -> TailoredResume:
@@ -24,7 +24,7 @@ def _mock_path(path_str: str, size: int = 12345) -> MagicMock:
 
 
 class TestGeneratePdf:
-    @patch("resume_operator.nodes.generate_pdf.create_pdf")
+    @patch("lucky_resume.nodes.generate_pdf.create_pdf")
     def test_calls_generator_and_returns_output_path(
         self, mock_create_pdf: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
@@ -44,7 +44,7 @@ class TestGeneratePdf:
         assert result["output_path"] == "output/resume.pdf"
         assert "errors" not in result
 
-    @patch("resume_operator.nodes.generate_pdf.create_pdf")
+    @patch("lucky_resume.nodes.generate_pdf.create_pdf")
     def test_records_error_when_generator_fails(
         self, mock_create_pdf: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
@@ -58,7 +58,7 @@ class TestGeneratePdf:
         assert any("PDF generation failed" in e for e in result["errors"])
         assert "output_path" not in result
 
-    @patch("resume_operator.nodes.generate_pdf.create_pdf")
+    @patch("lucky_resume.nodes.generate_pdf.create_pdf")
     def test_uses_default_path_when_output_path_empty(
         self, mock_create_pdf: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
@@ -72,7 +72,7 @@ class TestGeneratePdf:
         assert call_kwargs["output_path"] == Path("data/optimized_resume.pdf")
         assert result["output_path"] == "data/optimized_resume.pdf"
 
-    @patch("resume_operator.nodes.generate_pdf.create_pdf")
+    @patch("lucky_resume.nodes.generate_pdf.create_pdf")
     def test_returns_only_changed_fields(
         self, mock_create_pdf: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
@@ -85,7 +85,7 @@ class TestGeneratePdf:
         allowed_keys = {"output_path", "errors"}
         assert set(result.keys()).issubset(allowed_keys)
 
-    @patch("resume_operator.nodes.generate_pdf.create_pdf")
+    @patch("lucky_resume.nodes.generate_pdf.create_pdf")
     def test_preserves_existing_errors(
         self, mock_create_pdf: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:
@@ -100,7 +100,7 @@ class TestGeneratePdf:
         assert any("PDF generation failed" in e for e in result["errors"])
         assert len(result["errors"]) == 2
 
-    @patch("resume_operator.nodes.generate_pdf.create_pdf")
+    @patch("lucky_resume.nodes.generate_pdf.create_pdf")
     def test_no_errors_key_on_success(
         self, mock_create_pdf: MagicMock, sample_state: ResumeOptimizerState
     ) -> None:

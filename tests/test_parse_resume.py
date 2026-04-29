@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pydantic import ValidationError
 
-from resume_operator.nodes.parse_resume import ResumeLLMOutput, parse_resume
-from resume_operator.state import ResumeOptimizerState
+from lucky_resume.nodes.parse_resume import ResumeLLMOutput, parse_resume
+from lucky_resume.state import ResumeOptimizerState
 
 SAMPLE_RESUME_TEXT = "Jane Smith\njane@example.com\nSenior Engineer at TechCorp"
 
@@ -62,8 +62,8 @@ def base_state() -> ResumeOptimizerState:
 
 
 class TestParseResume:
-    @patch("resume_operator.nodes.parse_resume.get_structured_llm")
-    @patch("resume_operator.nodes.parse_resume.extract_text")
+    @patch("lucky_resume.nodes.parse_resume.get_structured_llm")
+    @patch("lucky_resume.nodes.parse_resume.extract_text")
     def test_parses_resume_successfully(
         self, mock_extract: MagicMock, mock_get_llm: MagicMock, base_state: ResumeOptimizerState
     ) -> None:
@@ -81,8 +81,8 @@ class TestParseResume:
         assert result["job_description"].raw_text == base_state.job_description_text
         mock_extract.assert_called_once_with(Path("resume.pdf"))
 
-    @patch("resume_operator.nodes.parse_resume.get_structured_llm")
-    @patch("resume_operator.nodes.parse_resume.extract_text")
+    @patch("lucky_resume.nodes.parse_resume.get_structured_llm")
+    @patch("lucky_resume.nodes.parse_resume.extract_text")
     def test_preserves_every_bullet(
         self, mock_extract: MagicMock, mock_get_llm: MagicMock, base_state: ResumeOptimizerState
     ) -> None:
@@ -104,7 +104,7 @@ class TestParseResume:
         ]
         assert [b.id for b in master_bullets] == ["exp-1-b1", "exp-1-b2", "exp-1-b3"]
 
-    @patch("resume_operator.nodes.parse_resume.extract_text")
+    @patch("lucky_resume.nodes.parse_resume.extract_text")
     def test_records_error_on_pdf_failure(
         self, mock_extract: MagicMock, base_state: ResumeOptimizerState
     ) -> None:
@@ -116,8 +116,8 @@ class TestParseResume:
         assert any("PDF extraction failed" in e for e in result["errors"])
         assert "resume" not in result
 
-    @patch("resume_operator.nodes.parse_resume.get_structured_llm")
-    @patch("resume_operator.nodes.parse_resume.extract_text")
+    @patch("lucky_resume.nodes.parse_resume.get_structured_llm")
+    @patch("lucky_resume.nodes.parse_resume.extract_text")
     def test_records_error_on_llm_failure(
         self, mock_extract: MagicMock, mock_get_llm: MagicMock, base_state: ResumeOptimizerState
     ) -> None:
@@ -130,8 +130,8 @@ class TestParseResume:
         assert any("LLM call failed" in e for e in result["errors"])
         assert "resume" not in result
 
-    @patch("resume_operator.nodes.parse_resume.get_structured_llm")
-    @patch("resume_operator.nodes.parse_resume.extract_text")
+    @patch("lucky_resume.nodes.parse_resume.get_structured_llm")
+    @patch("lucky_resume.nodes.parse_resume.extract_text")
     def test_records_error_on_schema_mismatch(
         self, mock_extract: MagicMock, mock_get_llm: MagicMock, base_state: ResumeOptimizerState
     ) -> None:
@@ -147,8 +147,8 @@ class TestParseResume:
         assert any("schema-invalid" in e for e in result["errors"])
         assert "resume" not in result
 
-    @patch("resume_operator.nodes.parse_resume.get_structured_llm")
-    @patch("resume_operator.nodes.parse_resume.extract_text")
+    @patch("lucky_resume.nodes.parse_resume.get_structured_llm")
+    @patch("lucky_resume.nodes.parse_resume.extract_text")
     def test_returns_only_changed_fields(
         self, mock_extract: MagicMock, mock_get_llm: MagicMock, base_state: ResumeOptimizerState
     ) -> None:
@@ -160,8 +160,8 @@ class TestParseResume:
         allowed_keys = {"resume", "master", "job_description", "errors"}
         assert set(result.keys()).issubset(allowed_keys)
 
-    @patch("resume_operator.nodes.parse_resume.get_structured_llm")
-    @patch("resume_operator.nodes.parse_resume.extract_text")
+    @patch("lucky_resume.nodes.parse_resume.get_structured_llm")
+    @patch("lucky_resume.nodes.parse_resume.extract_text")
     def test_reads_job_description_from_file(
         self, mock_extract: MagicMock, mock_get_llm: MagicMock
     ) -> None:
@@ -169,7 +169,7 @@ class TestParseResume:
         mock_extract.return_value = SAMPLE_RESUME_TEXT
         mock_get_llm.return_value = _make_llm(VALID_OUTPUT)
 
-        with patch("resume_operator.nodes.parse_resume.Path.read_text") as mock_read:
+        with patch("lucky_resume.nodes.parse_resume.Path.read_text") as mock_read:
             mock_read.return_value = "Backend Engineer role"
             result = parse_resume(state)
 
@@ -188,8 +188,8 @@ class TestSeniorFormatExtraction:
     (headline, links, skill_groups, per-role tech) through to the
     `ResumeMaster` instead of letting them get dropped in translation."""
 
-    @patch("resume_operator.nodes.parse_resume.get_structured_llm")
-    @patch("resume_operator.nodes.parse_resume.extract_text")
+    @patch("lucky_resume.nodes.parse_resume.get_structured_llm")
+    @patch("lucky_resume.nodes.parse_resume.extract_text")
     def test_extracts_all_senior_fields(
         self, mock_extract: MagicMock, mock_get_llm: MagicMock, base_state: ResumeOptimizerState
     ) -> None:
@@ -234,8 +234,8 @@ class TestSeniorFormatExtraction:
         # `all_skills()` flattens across flat + groups for the source_index path.
         assert set(master.all_skills()) == {"Python", "Go", "AWS"}
 
-    @patch("resume_operator.nodes.parse_resume.get_structured_llm")
-    @patch("resume_operator.nodes.parse_resume.extract_text")
+    @patch("lucky_resume.nodes.parse_resume.get_structured_llm")
+    @patch("lucky_resume.nodes.parse_resume.extract_text")
     def test_missing_senior_fields_defaults_to_empty(
         self, mock_extract: MagicMock, mock_get_llm: MagicMock, base_state: ResumeOptimizerState
     ) -> None:
