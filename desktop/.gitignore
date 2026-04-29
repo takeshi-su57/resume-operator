@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+src-tauri/target/
+src-tauri/gen/
+
+# Logs
+*.log
+pnpm-debug.log*
+
+# Editor
+.vscode/
+.idea/
+
+# Lock files — keep pnpm-lock.yaml committed for reproducibility
+package-lock.json
+yarn.lock
+
+# Tauri-generated files
+src-tauri/.cargo/

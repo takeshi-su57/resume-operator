@@ -16,6 +16,10 @@ eggs/
 .eggs/
 lib/
 lib64/
+# `lib/` matches Python venv directories anywhere; the Tauri JS shell
+# under `desktop/src/lib/` is hand-written source — keep it tracked.
+!desktop/src/lib/
+!desktop/src/lib/**
 parts/
 sdist/
 var/

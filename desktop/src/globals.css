@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Linear/Raycast-style dense theme — monospace body, tight spacing,
+   single accent color. The pro look comes from restraint:
+     - one accent color (cyan)
+     - one font family for body (JetBrains Mono)
+     - flat panels, hairline borders
+     - keyboard hints rendered as kbd-style chips
+*/
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+  }
+
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: theme("colors.border.DEFAULT");
+    border-radius: 4px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: theme("colors.border.strong");
+  }
+
+  /* Disable user-select on chrome — but allow it on content panes. */
+  button,
+  [role="button"],
+  [role="tab"],
+  [data-no-select] {
+    user-select: none;
+  }
+}
+
+@layer components {
+  .row {
+    @apply flex items-center gap-2 px-3 py-1.5;
+  }
+
+  .panel {
+    @apply rounded-md border border-border bg-bg-panel;
+  }
+
+  .kbd {
+    @apply inline-flex h-5 min-w-[1.25rem] items-center justify-center
+      rounded-sm border border-border bg-bg-raised px-1
+      font-mono text-[0.6875rem] text-fg-muted;
+  }
+
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2
+      focus-visible:ring-accent-ring focus-visible:ring-offset-0;
+  }
+
+  .input-base {
+    @apply w-full rounded-md border border-border bg-bg-subtle
+      px-2.5 py-1.5 text-sm text-fg placeholder:text-fg-faint
+      focus-ring;
+  }
+}
