@@ -19,8 +19,8 @@ type NavItem = {
 };
 
 const items: NavItem[] = [
+  { to: "/run", label: "Run", icon: PlayCircle, enabled: true },
   { to: "/score", label: "Score", icon: Gauge, enabled: true },
-  { to: "/run", label: "Run", icon: PlayCircle, enabled: false, hint: "Phase 3" },
   { to: "/bootstrap", label: "Bootstrap", icon: Sparkles, enabled: false, hint: "Phase 5" },
   { to: "/parse", label: "Parse PDF", icon: FileSearch, enabled: false, hint: "Phase 5" },
   { to: "/style", label: "Extract Style", icon: Wrench, enabled: false, hint: "Phase 5" },
