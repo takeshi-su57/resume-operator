@@ -17,11 +17,13 @@ runs for both `ats_score` (scores the master resume, pre-tailor) and
 
 from __future__ import annotations
 
+import concurrent.futures
+import contextvars
 import logging
 from typing import Any
 
 from lucky_resume.config import get_settings
-from lucky_resume.events import node_span
+from lucky_resume.events import emit_progress, node_span
 from lucky_resume.state import (
     ATSReport,
     ContactCheck,
@@ -29,6 +31,7 @@ from lucky_resume.state import (
     ResumeOptimizerState,
     SectionCheck,
     SkillCountRow,
+    ToneFlag,
 )
 from lucky_resume.tools.ats_checks import (
     check_contact,
@@ -117,10 +120,16 @@ def _ats_score_tailored_body(state: ResumeOptimizerState) -> dict[str, Any]:
 
 
 def _build_report(state: ResumeOptimizerState, *, resume_text: str, label: str) -> ATSReport:
-    """Run the three passes and assemble the composite score."""
+    """Run the three passes and assemble the composite score.
+
+    Emits a `progress` event before each phase so the GUI can render a
+    sub-step progress bar that mirrors what the user is actually
+    waiting on (instead of the legacy time-based heuristic).
+    """
     jd_text = state.job_description.raw_text
 
     # 1. Deterministic structural checks (no LLM).
+    emit_progress(label, step="structural_checks", label="Running structural checks")
     contact = check_contact(state.master, resume_text)
     sections = check_sections(state.master, resume_text)
     job_title = check_job_title(state.master, jd_text)
@@ -128,14 +137,24 @@ def _build_report(state: ResumeOptimizerState, *, resume_text: str, label: str) 
     wc = count_words(resume_text)
     wc_ok = word_count_ok(wc)
 
-    # 2. LLM keyword extractor.
-    hard, soft = extract_keywords(resume_text, jd_text)
+    # 2 + 3. LLM keyword extraction and tone check run in parallel — they
+    # have no data dependency and were each multi-minute calls when run
+    # sequentially. Emit both progress events upfront so the UI shows them
+    # in flight together.
+    emit_progress(label, step="extract_keywords", label="Extracting JD keywords")
+    emit_progress(label, step="check_tone", label="Scanning for tone issues")
+    hard, soft, tone_flags = _keywords_and_tone_concurrent(resume_text, jd_text)
+    emit_progress(
+        label,
+        step="derive_matches",
+        label="Cross-checking resume against JD",
+        hard=len(hard),
+        soft=len(soft),
+    )
     matches, gaps = derive_matches_and_gaps(hard, soft)
 
-    # 3. LLM tone checker.
-    tone_flags = check_tone(resume_text)
-
     # 4. Composite score.
+    emit_progress(label, step="compose_report", label="Composing ATS report")
     composite = _composite_score(
         hard=hard,
         soft=soft,
@@ -169,6 +188,28 @@ def _build_report(state: ResumeOptimizerState, *, resume_text: str, label: str) 
         keyword_matches=matches,
         keyword_gaps=gaps,
     )
+
+
+def _keywords_and_tone_concurrent(
+    resume_text: str, jd_text: str
+) -> tuple[list[SkillCountRow], list[SkillCountRow], list[ToneFlag]]:
+    """Run `extract_keywords` and `check_tone` in parallel threads.
+
+    Each worker copies the current `contextvars` context so the active
+    event sink (bound by the task runner via `bind_sink`) survives the
+    thread hop — without that, `emit_progress` calls inside the LLM
+    tools would silently no-op and the UI loses sub-step visibility.
+    """
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        kw_future = executor.submit(
+            contextvars.copy_context().run, extract_keywords, resume_text, jd_text
+        )
+        tone_future = executor.submit(
+            contextvars.copy_context().run, check_tone, resume_text
+        )
+        hard, soft = kw_future.result()
+        tone_flags = tone_future.result()
+    return hard, soft, tone_flags
 
 
 def _composite_score(
